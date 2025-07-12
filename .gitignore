@@ -1,139 +1,143 @@
-# WAMEX - WhatsApp API .gitignore
-
-# ===== EXECUTÁVEIS =====
+# Binários Go
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+server
+server.exe
 wamex
-wamex-prod
 wamex.exe
-wamex-prod.exe
 
-# ===== BANCO DE DADOS =====
-*.db
-*.sqlite
-*.sqlite3
-whatsapp.db
-whatsapp.db-shm
-whatsapp.db-wal
-
-# ===== GO ESPECÍFICO =====
-# Test binary, built with `go test -c`
+# Arquivos de teste Go
 *.test
-
-# Code coverage profiles and other test artifacts
 *.out
-coverage.*
-*.coverprofile
-profile.cov
 
-# Dependency directories
+# Dependências Go
 vendor/
 
-# Go workspace file
-go.work
-go.work.sum
-
-# ===== CONFIGURAÇÕES SENSÍVEIS =====
+# Arquivos de configuração sensíveis
 .env
 .env.local
 .env.production
-config.json
-secrets.json
+.env.staging
 
-# ===== LOGS E TEMPORÁRIOS =====
+# Logs
 *.log
 logs/
 log/
+
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
+dbdata/
+
+# Arquivos temporários
+tmp/
+temp/
 *.tmp
 *.temp
-temp/
-tmp/
 
-# ===== CERTIFICADOS E CHAVES =====
+# Arquivos de sessão WhatsApp
+sessions/
+session_data/
+*.session
+
+# Arquivos de mídia/uploads
+uploads/
+files/
+media/
+
+# Cache
+*.cache
+cache/
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Certificados e chaves
 *.pem
 *.key
 *.crt
 *.p12
 *.pfx
-certs/
-keys/
 
-# ===== UPLOADS E MÍDIA =====
-uploads/
-media/
-files/
-attachments/
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.mp4
-*.mp3
-*.pdf
-*.doc
-*.docx
+# Docker volumes
+postgres_data/
+pgadmin_data/
 
-# ===== IDE E EDITORES =====
-# Visual Studio Code
-.vscode/
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# GoLand/IntelliJ
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# ===== SISTEMA OPERACIONAL =====
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon
-._*
-
-# Linux
-*~
-.fuse_hidden*
-.directory
-.Trash-*
-
-# ===== BACKUP E VERSIONING =====
+# Backup files
 *.bak
 *.backup
-*.old
-*.orig
-*.save
 
-# ===== TESTES E DESENVOLVIMENTO =====
-test_*.json
-debug.log
-debug/
+# OS específicos
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# ===== WHATSMEOW ESPECÍFICO =====
-# Arquivos de sessão do WhatsApp (se houver)
-session_*.json
-device_*.json
+# Arquivos de build
+dist/
+build/
+out/
 
-# ===== MANTER ARQUIVOS IMPORTANTES =====
-!README.md
-!LICENSE
-!go.mod
-!go.sum
-!*.go
-!api.http
-!test_messages.http
-!routes.go
-!MENSAGENS.md
+# Coverage reports
+*.cover
+coverage.txt
+coverage.html
+
+# Profiling
+*.prof
+*.pprof
+
+# Air (live reload)
+.air.toml
+tmp/
+
+# Delve debugger
+__debug_bin
+
+# GoLand
+.idea/
+
+# VS Code
+.vscode/
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Arquivos específicos do projeto
+referencia/
+docs/private/
+scripts/private/
+
+# Node modules (se houver frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos de configuração local
+config.local.yaml
+config.local.json
