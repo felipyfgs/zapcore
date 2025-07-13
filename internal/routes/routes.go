@@ -12,7 +12,7 @@ import (
 )
 
 // Router configura e retorna todas as rotas da aplicação
-func SetupRoutes(sessionHandler *handler.SessionHandler, whatsappService *service.WhatsAppService) chi.Router {
+func SetupRoutes(sessionHandler *handler.SessionHandler, mediaHandler *handler.MediaHandler, whatsappService *service.WhatsAppService) chi.Router {
 	router := chi.NewRouter()
 
 	// Middleware básicos do Chi
@@ -104,6 +104,24 @@ func SetupRoutes(sessionHandler *handler.SessionHandler, whatsappService *servic
 
 		// POST /message/{sessionID}/send/list - Envia mensagem de lista interativa (aceita ID ou Name)
 		r.Post("/{sessionID}/send/list", sessionHandler.SendListMessage)
+
+		// POST /message/{sessionID}/send/media - Envia mensagem de mídia já uploadada (aceita ID ou Name)
+		r.Post("/{sessionID}/send/media", sessionHandler.SendMediaMessage)
+	})
+
+	// Grupo de rotas para gerenciamento de mídia
+	router.Route("/media", func(r chi.Router) {
+		// POST /media/upload - Upload geral de mídia (detecta tipo automaticamente)
+		r.Post("/upload", mediaHandler.UploadMedia)
+
+		// GET /media/list - Listagem de mídias com paginação e filtros
+		r.Get("/list", mediaHandler.ListMedia)
+
+		// GET /media/{mediaID}/download - Download de mídia por ID
+		r.Get("/{mediaID}/download", mediaHandler.DownloadMedia)
+
+		// DELETE /media/{mediaID} - Deleção de mídia por ID
+		r.Delete("/{mediaID}", mediaHandler.DeleteMedia)
 	})
 
 	// Rota de health check

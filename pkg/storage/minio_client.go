@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"wamex/pkg/logger"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"wamex/pkg/logger"
 )
 
 // MinIOClient wrapper para cliente MinIO
@@ -23,12 +25,12 @@ type MinIOClient struct {
 
 // MinIOConfig configurações para MinIO
 type MinIOConfig struct {
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
-	BucketMedia     string
-	BucketTemp      string
+	Endpoint         string
+	AccessKeyID      string
+	SecretAccessKey  string
+	UseSSL           bool
+	BucketMedia      string
+	BucketTemp       string
 	BucketThumbnails string
 }
 
@@ -182,11 +184,11 @@ func (mc *MinIOClient) UploadFile(ctx context.Context, bucketName, objectName st
 func (mc *MinIOClient) GenerateObjectName(prefix, extension string) string {
 	timestamp := time.Now().Format("2006/01/02")
 	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), generateRandomString(8))
-	
+
 	if extension != "" && !strings.HasPrefix(extension, ".") {
 		extension = "." + extension
 	}
-	
+
 	return filepath.Join(prefix, timestamp, filename+extension)
 }
 
@@ -213,6 +215,45 @@ func (mc *MinIOClient) DeleteFile(ctx context.Context, bucketName, objectName st
 		Msg("Arquivo removido com sucesso")
 
 	return nil
+}
+
+// DownloadFile baixa um arquivo do MinIO
+func (mc *MinIOClient) DownloadFile(ctx context.Context, bucketName, objectName string) ([]byte, error) {
+	logger.WithComponent("minio").Debug().
+		Str("bucket", bucketName).
+		Str("object", objectName).
+		Msg("Baixando arquivo do MinIO")
+
+	// Obtém o objeto
+	object, err := mc.client.GetObject(ctx, bucketName, objectName, minio.GetObjectOptions{})
+	if err != nil {
+		logger.WithComponent("minio").Error().
+			Err(err).
+			Str("bucket", bucketName).
+			Str("object", objectName).
+			Msg("Erro ao obter objeto do MinIO")
+		return nil, fmt.Errorf("failed to get object: %w", err)
+	}
+	defer object.Close()
+
+	// Lê todos os dados
+	data, err := io.ReadAll(object)
+	if err != nil {
+		logger.WithComponent("minio").Error().
+			Err(err).
+			Str("bucket", bucketName).
+			Str("object", objectName).
+			Msg("Erro ao ler dados do objeto")
+		return nil, fmt.Errorf("failed to read object data: %w", err)
+	}
+
+	logger.WithComponent("minio").Info().
+		Str("bucket", bucketName).
+		Str("object", objectName).
+		Int("size", len(data)).
+		Msg("Arquivo baixado com sucesso")
+
+	return data, nil
 }
 
 // GetFileURL obtém a URL de um arquivo
@@ -252,7 +293,7 @@ func InitializeMinIO() (*MinIOClient, error) {
 
 	// Cria buckets necessários
 	ctx := context.Background()
-	
+
 	// Bucket para mídias (público)
 	if err := client.CreateBucketIfNotExists(ctx, config.BucketMedia, true); err != nil {
 		return nil, fmt.Errorf("failed to create media bucket: %w", err)

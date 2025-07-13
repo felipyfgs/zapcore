@@ -1,13 +1,19 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
 
 	"wamex/internal/domain"
+	"wamex/internal/repository"
+	"wamex/internal/service"
+	"wamex/pkg/storage"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -15,13 +21,15 @@ import (
 
 // SessionHandler gerencia as requisições HTTP para sessões
 type SessionHandler struct {
-	service domain.SessionService
+	service   domain.SessionService
+	mediaRepo *repository.MediaRepository
 }
 
 // NewSessionHandler cria uma nova instância do handler de sessões
-func NewSessionHandler(service domain.SessionService) *SessionHandler {
+func NewSessionHandler(service domain.SessionService, mediaRepo *repository.MediaRepository) *SessionHandler {
 	return &SessionHandler{
-		service: service,
+		service:   service,
+		mediaRepo: mediaRepo,
 	}
 }
 
@@ -1526,4 +1534,371 @@ func (h *SessionHandler) writeMessageError(w http.ResponseWriter, statusCode int
 		Msg("Message error response")
 
 	h.writeJSONResponse(w, statusCode, response)
+}
+
+// ============================================================================
+// UPLOAD MULTIPART HANDLERS
+// ============================================================================
+
+// processMultipartFile processa um arquivo de upload multipart
+func (h *SessionHandler) processMultipartFile(file multipart.File, header *multipart.FileHeader, messageType domain.MessageType) ([]byte, string, error) {
+	// Limita o tamanho do arquivo baseado no tipo
+	var maxSize int64
+	switch messageType {
+	case domain.MessageTypeImage:
+		maxSize = domain.MaxImageSize
+	case domain.MessageTypeAudio:
+		maxSize = domain.MaxAudioSize
+	case domain.MessageTypeDocument:
+		maxSize = domain.MaxDocumentSize
+	case domain.MessageTypeVideo:
+		maxSize = domain.MaxDocumentSize // Vídeos usam o mesmo limite de documentos
+	default:
+		return nil, "", fmt.Errorf("tipo de mensagem não suportado: %s", messageType)
+	}
+
+	// Verifica o tamanho do arquivo
+	if header.Size > maxSize {
+		return nil, "", fmt.Errorf("arquivo muito grande: %d bytes (máximo: %d bytes)", header.Size, maxSize)
+	}
+
+	// Lê o arquivo completo
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, "", fmt.Errorf("erro ao ler arquivo: %w", err)
+	}
+
+	// Detecta o tipo MIME
+	mimeType := http.DetectContentType(data)
+
+	// Valida o tipo MIME baseado no tipo de mensagem
+	if err := h.validateMimeType(mimeType, messageType); err != nil {
+		return nil, "", err
+	}
+
+	return data, mimeType, nil
+}
+
+// validateMimeType valida se o tipo MIME é permitido para o tipo de mensagem
+func (h *SessionHandler) validateMimeType(mimeType string, messageType domain.MessageType) error {
+	switch messageType {
+	case domain.MessageTypeImage:
+		if !strings.HasPrefix(mimeType, "image/") {
+			return fmt.Errorf("tipo de arquivo inválido para imagem: %s", mimeType)
+		}
+	case domain.MessageTypeAudio:
+		if !strings.HasPrefix(mimeType, "audio/") {
+			return fmt.Errorf("tipo de arquivo inválido para áudio: %s", mimeType)
+		}
+	case domain.MessageTypeVideo:
+		if !strings.HasPrefix(mimeType, "video/") {
+			return fmt.Errorf("tipo de arquivo inválido para vídeo: %s", mimeType)
+		}
+	case domain.MessageTypeDocument:
+		// Documentos podem ter vários tipos MIME
+		allowedTypes := []string{
+			"application/pdf",
+			"application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.ms-excel",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"text/plain",
+			"application/zip",
+			"application/x-rar-compressed",
+		}
+
+		for _, allowedType := range allowedTypes {
+			if mimeType == allowedType {
+				return nil
+			}
+		}
+		return fmt.Errorf("tipo de documento não suportado: %s", mimeType)
+	}
+	return nil
+}
+
+// getFileExtension retorna a extensão de arquivo baseada no tipo MIME
+func getFileExtension(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/wav":
+		return ".wav"
+	case "video/mp4":
+		return ".mp4"
+	case "video/avi":
+		return ".avi"
+	case "video/quicktime":
+		return ".mov"
+	case "application/pdf":
+		return ".pdf"
+	case "application/msword":
+		return ".doc"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "text/plain":
+		return ".txt"
+	default:
+		return ".bin"
+	}
+}
+
+// convertToBase64DataURL converte dados binários para data URL base64
+func convertToBase64DataURL(data []byte, mimeType string) string {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+}
+
+// SendImageMessageMultipart envia uma mensagem de imagem via upload multipart
+// POST /message/{sessionID}/send/image/upload - Aceita tanto sessionID quanto sessionName
+func (h *SessionHandler) SendImageMessageMultipart(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	if sessionID == "" {
+		h.writeMessageError(w, http.StatusBadRequest, "INVALID_SESSION", "Session ID is required", "sessionID")
+		return
+	}
+
+	// Limita o tamanho da requisição
+	r.Body = http.MaxBytesReader(w, r.Body, domain.MaxImageSize+1024*1024) // +1MB para outros campos do form
+
+	// Parse do multipart form
+	if err := r.ParseMultipartForm(domain.MaxImageSize); err != nil {
+		h.writeMessageError(w, http.StatusBadRequest, "FORM_TOO_LARGE", "Uploaded file is too large", "file")
+		return
+	}
+
+	// Obtém o arquivo do form
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		h.writeMessageError(w, http.StatusBadRequest, "MISSING_FILE", "File is required", "file")
+		return
+	}
+	defer file.Close()
+
+	// Processa o arquivo
+	data, mimeType, err := h.processMultipartFile(file, header, domain.MessageTypeImage)
+	if err != nil {
+		h.writeMessageError(w, http.StatusBadRequest, "INVALID_FILE", err.Error(), "file")
+		return
+	}
+
+	// Obtém outros campos do form
+	phone := r.FormValue("phone")
+	if phone == "" {
+		h.writeMessageError(w, http.StatusBadRequest, "MISSING_PHONE", "Phone number is required", "phone")
+		return
+	}
+
+	caption := r.FormValue("caption")
+	filename := header.Filename
+	if filename == "" {
+		filename = "image" + getFileExtension(mimeType)
+	}
+
+	// Busca a sessão
+	session, err := h.service.GetSessionByID(sessionID)
+	if err != nil {
+		h.writeMessageError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found", "sessionID")
+		return
+	}
+
+	// Converte dados para base64 para usar o sistema existente
+	base64Data := convertToBase64DataURL(data, mimeType)
+
+	// Envia a mensagem usando o sistema existente
+	err = h.service.SendImageMessageMultiSource(session.Session, phone, base64Data, "", "", "", caption, mimeType)
+	if err != nil {
+		if strings.Contains(err.Error(), "not connected") {
+			h.writeMessageError(w, http.StatusBadRequest, domain.ErrorCodeSessionOffline, "Session is not connected", "sessionID")
+			return
+		}
+		if strings.Contains(err.Error(), "invalid recipient") {
+			h.writeMessageError(w, http.StatusBadRequest, domain.ErrorCodeInvalidPhone, "Invalid phone number format", "phone")
+			return
+		}
+		h.writeMessageError(w, http.StatusInternalServerError, "SEND_FAILED", "Failed to send image message", "")
+		return
+	}
+
+	response := domain.MessageResponse{
+		Success:   true,
+		Message:   "Image message sent successfully via upload",
+		Timestamp: time.Now(),
+		Details: &domain.Details{
+			Phone:       phone,
+			Type:        domain.MessageTypeImage,
+			Status:      "sent",
+			SentAt:      time.Now(),
+			SessionName: session.Session,
+			MediaInfo: &domain.MediaInfo{
+				Filename:     filename,
+				MimeType:     mimeType,
+				OriginalSize: int64(len(data)),
+			},
+		},
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, response)
+}
+
+// SendMediaMessage envia uma mensagem de mídia com suporte a múltiplas fontes
+// POST /message/{sessionID}/send/media
+// Suporta: MediaID (MinIO), Base64, URL, Upload direto (multipart)
+func (h *SessionHandler) SendMediaMessage(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	if sessionID == "" {
+		h.writeMessageError(w, http.StatusBadRequest, "INVALID_SESSION", "Session ID is required", "sessionID")
+		return
+	}
+
+	// Detectar tipo de content (JSON ou multipart)
+	contentType := r.Header.Get("Content-Type")
+	isMultipart := strings.HasPrefix(contentType, "multipart/form-data")
+
+	var req domain.SendMediaMessageRequest
+	var file multipart.File
+	var header *multipart.FileHeader
+
+	if isMultipart {
+		// Processar multipart form
+		if err := r.ParseMultipartForm(100 << 20); err != nil { // 100MB max
+			h.writeMessageError(w, http.StatusBadRequest, "INVALID_MULTIPART", "Invalid multipart form", "body")
+			return
+		}
+
+		// Extrair campos do form
+		req.Phone = r.FormValue("phone")
+		req.Caption = r.FormValue("caption")
+		req.MessageType = r.FormValue("messageType")
+		req.Filename = r.FormValue("filename")
+
+		// Extrair arquivo
+		var err error
+		file, header, err = r.FormFile("file")
+		if err != nil {
+			h.writeMessageError(w, http.StatusBadRequest, "MISSING_FILE", "File is required for multipart upload", "file")
+			return
+		}
+		defer file.Close()
+	} else {
+		// Parse do JSON request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			h.writeMessageError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON format", "body")
+			return
+		}
+	}
+
+	// Validar campos obrigatórios
+	if req.Phone == "" {
+		h.writeMessageError(w, http.StatusBadRequest, "MISSING_PHONE", "Phone number is required", "phone")
+		return
+	}
+
+	// Buscar a sessão
+	session, err := h.service.GetSessionByID(sessionID)
+	if err != nil {
+		h.writeMessageError(w, http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found", "sessionID")
+		return
+	}
+
+	log.Info().
+		Str("session_id", sessionID).
+		Str("phone", req.Phone).
+		Bool("has_media_id", req.MediaID != "").
+		Bool("has_base64", req.Base64 != "").
+		Bool("has_url", req.URL != "").
+		Bool("has_file", file != nil).
+		Msg("Processando envio de mídia multi-source")
+
+	// Criar MediaSourceProcessor
+	mediaService := service.NewMediaService()
+	validationService := service.NewMediaValidationService()
+
+	// Inicializar MinIO client
+	minioClient, err := storage.InitializeMinIO()
+	if err != nil {
+		h.writeMessageError(w, http.StatusInternalServerError, "STORAGE_ERROR", "Storage service unavailable", "")
+		return
+	}
+
+	processor := service.NewMediaSourceProcessor(h.mediaRepo, minioClient, mediaService, validationService)
+
+	// Processar mídia usando o processador unificado
+	processed, err := processor.ProcessRequest(&req, file, header)
+	if err != nil {
+		log.Error().Err(err).Msg("Erro ao processar mídia")
+		h.writeMessageError(w, http.StatusBadRequest, "MEDIA_PROCESSING_ERROR", err.Error(), "")
+		return
+	}
+
+	// Converter dados para base64 para usar sistema existente
+	base64Data := convertToBase64DataURL(processed.Data, processed.MimeType)
+
+	// Enviar mensagem usando o sistema existente baseado no tipo detectado
+	var sendErr error
+	switch processed.MessageType {
+	case domain.MessageTypeImage:
+		sendErr = h.service.SendImageMessageMultiSource(session.Session, req.Phone, base64Data, "", "", "", req.Caption, processed.MimeType)
+	case domain.MessageTypeAudio:
+		sendErr = h.service.SendAudioMessageMultiSource(session.Session, req.Phone, base64Data, "", "", "")
+	case domain.MessageTypeVideo:
+		// Para vídeo, precisamos de um thumbnail JPEG (vazio por enquanto)
+		var emptyThumbnail []byte
+		sendErr = h.service.SendVideoMessageMultiSource(session.Session, req.Phone, base64Data, "", "", "", req.Caption, processed.MimeType, emptyThumbnail)
+	case domain.MessageTypeDocument:
+		sendErr = h.service.SendDocumentMessageMultiSource(session.Session, req.Phone, base64Data, "", "", "", processed.Filename, processed.MimeType)
+	case domain.MessageTypeSticker:
+		// Sticker usa o método básico, não tem MultiSource
+		sendErr = h.service.SendStickerMessage(session.Session, req.Phone, base64Data)
+	default:
+		h.writeMessageError(w, http.StatusBadRequest, "INVALID_MESSAGE_TYPE", "Unsupported message type", "messageType")
+		return
+	}
+
+	if sendErr != nil {
+		if strings.Contains(sendErr.Error(), "not connected") {
+			h.writeMessageError(w, http.StatusBadRequest, domain.ErrorCodeSessionOffline, "Session is not connected", "sessionID")
+			return
+		}
+		if strings.Contains(sendErr.Error(), "invalid recipient") {
+			h.writeMessageError(w, http.StatusBadRequest, domain.ErrorCodeInvalidPhone, "Invalid phone number format", "phone")
+			return
+		}
+		h.writeMessageError(w, http.StatusInternalServerError, "SEND_FAILED", "Failed to send media message", "")
+		return
+	}
+
+	// Criar resposta unificada usando a nova estrutura
+	response := domain.NewSendMediaMessageResponse(
+		req.Phone,
+		session.Session,
+		processed,
+		"", // WhatsApp message ID (não disponível no sistema atual)
+		"", // WhatsApp direct path (não disponível no sistema atual)
+		"", // WhatsApp URL (não disponível no sistema atual)
+	)
+
+	log.Info().
+		Str("session_name", session.Session).
+		Str("phone", req.Phone).
+		Str("message_type", string(processed.MessageType)).
+		Str("source", processed.Source).
+		Str("filename", processed.Filename).
+		Int64("size", processed.Size).
+		Dur("processing_time", processed.ProcessingTime).
+		Msg("Mensagem de mídia enviada com sucesso")
+
+	h.writeJSONResponse(w, http.StatusOK, response)
 }
