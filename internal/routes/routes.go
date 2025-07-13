@@ -83,6 +83,27 @@ func SetupRoutes(sessionHandler *handler.SessionHandler, whatsappService *servic
 
 		// POST /message/{sessionID}/send/sticker - Envia mensagem de sticker (aceita ID ou Name)
 		r.Post("/{sessionID}/send/sticker", sessionHandler.SendStickerMessage)
+
+		// POST /message/{sessionID}/send/location - Envia mensagem de localização (aceita ID ou Name)
+		r.Post("/{sessionID}/send/location", sessionHandler.SendLocationMessage)
+
+		// POST /message/{sessionID}/send/contact - Envia mensagem de contato (aceita ID ou Name)
+		r.Post("/{sessionID}/send/contact", sessionHandler.SendContactMessage)
+
+		// POST /message/{sessionID}/react - Reage a uma mensagem existente (aceita ID ou Name)
+		r.Post("/{sessionID}/react", sessionHandler.ReactToMessage)
+
+		// POST /message/{sessionID}/send/video - Envia mensagem de vídeo (aceita ID ou Name)
+		r.Post("/{sessionID}/send/video", sessionHandler.SendVideoMessage)
+
+		// POST /message/{sessionID}/edit - Edita uma mensagem existente (aceita ID ou Name)
+		r.Post("/{sessionID}/edit", sessionHandler.EditMessage)
+
+		// POST /message/{sessionID}/send/poll - Envia mensagem de enquete para grupos (aceita ID ou Name)
+		r.Post("/{sessionID}/send/poll", sessionHandler.SendPollMessage)
+
+		// POST /message/{sessionID}/send/list - Envia mensagem de lista interativa (aceita ID ou Name)
+		r.Post("/{sessionID}/send/list", sessionHandler.SendListMessage)
 	})
 
 	// Rota de health check

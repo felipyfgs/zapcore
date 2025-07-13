@@ -100,5 +100,13 @@ type SessionService interface {
 	SendAudioMessage(sessionName, to, audioData string) error
 	SendAudioMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID string) error
 	SendDocumentMessage(sessionName, to, documentData, filename, mimeType string) error
+	SendDocumentMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, filename, mimeType string) error
 	SendStickerMessage(sessionName, to, stickerData string) error
+	SendLocationMessage(sessionName, to string, latitude, longitude float64, name string) error
+	SendContactMessage(sessionName, to, name, vcard string) error
+	ReactToMessage(sessionName, to, messageID, reaction string) error
+	SendVideoMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string, jpegThumbnail []byte) error
+	EditMessage(sessionName, to, messageID, newText string) error
+	SendPollMessage(sessionName, to, header string, options []string, maxSelections int) error
+	SendListMessage(sessionName, to, header, body, footer, buttonText string, sections []ListSection) error
 }

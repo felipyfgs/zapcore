@@ -108,6 +108,11 @@ func (ms *MediaSourceService) ProcessMediaSource(req MediaSourceRequest, message
 		result.MimeType = http.DetectContentType(result.Data)
 	}
 
+	// Corrige MIME type genérico baseado na extensão do arquivo
+	if result.MimeType == "application/octet-stream" && result.Filename != "" {
+		result.MimeType = ms.detectMimeTypeByExtension(result.Filename)
+	}
+
 	// Valida tipo MIME para o tipo de mensagem
 	if !domain.IsValidMimeType(messageType, result.MimeType) {
 		return nil, fmt.Errorf("tipo MIME %s não suportado para %s", result.MimeType, messageType)
@@ -357,4 +362,51 @@ func GetProjectRoot() string {
 	logger.WithComponent("media-source").Warn().
 		Msg("go.mod não encontrado, usando diretório atual")
 	return "."
+}
+
+// detectMimeTypeByExtension detecta MIME type baseado na extensão do arquivo
+func (ms *MediaSourceService) detectMimeTypeByExtension(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	mimeTypes := map[string]string{
+		// Documentos
+		".pdf":  "application/pdf",
+		".doc":  "application/msword",
+		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		".xls":  "application/vnd.ms-excel",
+		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		".ppt":  "application/vnd.ms-powerpoint",
+		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		".txt":  "text/plain",
+
+		// Imagens
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".gif":  "image/gif",
+		".webp": "image/webp",
+
+		// Áudio
+		".mp3": "audio/mpeg",
+		".ogg": "audio/ogg",
+		".wav": "audio/wav",
+		".aac": "audio/aac",
+
+		// Vídeo
+		".mp4": "video/mp4",
+		".avi": "video/avi",
+		".mov": "video/quicktime",
+	}
+
+	if mimeType, exists := mimeTypes[ext]; exists {
+		logger.WithComponent("media-source").Debug().
+			Str("filename", filename).
+			Str("extension", ext).
+			Str("detected_mime", mimeType).
+			Msg("MIME type detectado por extensão")
+		return mimeType
+	}
+
+	// Se não encontrou, retorna o tipo genérico
+	return "application/octet-stream"
 }

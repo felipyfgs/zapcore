@@ -15,6 +15,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+	waCommon "go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store"
@@ -860,6 +861,644 @@ func (s *WhatsAppService) SendDocumentMessage(sessionName, to, documentData, fil
 		Str("filename", filename).
 		Int64("file_size", processed.Size).
 		Msg("Document message sent successfully")
+
+	return nil
+}
+
+// SendDocumentMessageMultiSource envia uma mensagem de documento com múltiplas fontes
+func (s *WhatsAppService) SendDocumentMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, filename, mimeType string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Cria o serviço de fonte de mídia
+	mediaSourceService := NewMediaSourceService(nil, GetProjectRoot())
+
+	// Prepara a requisição de mídia
+	sourceReq := MediaSourceRequest{
+		Base64:   base64Data,
+		FilePath: filePath,
+		URL:      url,
+		MinioID:  minioID,
+		MimeType: mimeType,
+		Filename: filename,
+	}
+
+	// Processa a fonte de mídia
+	sourceResult, err := mediaSourceService.ProcessMediaSource(sourceReq, domain.MessageTypeDocument)
+	if err != nil {
+		return fmt.Errorf("failed to process media source: %w", err)
+	}
+
+	// Processa a mídia para upload
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaFromSource(sourceResult, domain.MessageTypeDocument)
+	if err != nil {
+		return fmt.Errorf("failed to process media: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaDocument)
+	if err != nil {
+		return fmt.Errorf("failed to upload document: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de documento seguindo a implementação de referência
+	caption := "" // Caption vazia por padrão
+	msg := &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(processed.Data))), // Tamanho dos dados originais
+			FileName:      &filename,
+			Caption:       &caption, // Campo caption como na referência
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("source", sourceResult.Source).
+			Msg("Failed to send document message")
+		return fmt.Errorf("failed to send document message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Str("source", sourceResult.Source).
+		Str("filename", filename).
+		Msg("Document message sent successfully")
+
+	return nil
+}
+
+// SendLocationMessage envia uma mensagem de localização
+func (s *WhatsAppService) SendLocationMessage(sessionName, to string, latitude, longitude float64, name string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de localização
+	msg := &waProto.Message{
+		LocationMessage: &waProto.LocationMessage{
+			DegreesLatitude:  &latitude,
+			DegreesLongitude: &longitude,
+			Name:             &name,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Float64("latitude", latitude).
+			Float64("longitude", longitude).
+			Str("location_name", name).
+			Msg("Failed to send location message")
+		return fmt.Errorf("failed to send location message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Float64("latitude", latitude).
+		Float64("longitude", longitude).
+		Str("location_name", name).
+		Msg("Location message sent successfully")
+
+	return nil
+}
+
+// SendContactMessage envia uma mensagem de contato
+func (s *WhatsAppService) SendContactMessage(sessionName, to, name, vcard string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de contato
+	msg := &waProto.Message{
+		ContactMessage: &waProto.ContactMessage{
+			DisplayName: &name,
+			Vcard:       &vcard,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("contact_name", name).
+			Msg("Failed to send contact message")
+		return fmt.Errorf("failed to send contact message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("contact_name", name).
+		Msg("Contact message sent successfully")
+
+	return nil
+}
+
+// ReactToMessage reage a uma mensagem existente
+func (s *WhatsAppService) ReactToMessage(sessionName, to, messageID, reaction string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Processa a reação (remove se for "remove")
+	reactionText := reaction
+	if reaction == "remove" {
+		reactionText = ""
+	}
+
+	// Determina se a mensagem é nossa ou não baseado no prefixo
+	fromMe := false
+	actualMessageID := messageID
+	if strings.HasPrefix(messageID, "me:") {
+		fromMe = true
+		actualMessageID = messageID[len("me:"):]
+	}
+
+	// Cria a mensagem de reação
+	msg := &waProto.Message{
+		ReactionMessage: &waProto.ReactionMessage{
+			Key: &waCommon.MessageKey{
+				RemoteJID: proto.String(recipient.String()),
+				FromMe:    proto.Bool(fromMe),
+				ID:        proto.String(actualMessageID),
+			},
+			Text:              proto.String(reactionText),
+			GroupingKey:       proto.String(reactionText),
+			SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+		},
+	}
+
+	// Envia a reação
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: actualMessageID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", actualMessageID).
+			Str("reaction", reaction).
+			Bool("from_me", fromMe).
+			Msg("Failed to send reaction")
+		return fmt.Errorf("failed to send reaction: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", actualMessageID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("reaction", reaction).
+		Bool("from_me", fromMe).
+		Msg("Reaction sent successfully")
+
+	return nil
+}
+
+// SendVideoMessageMultiSource envia uma mensagem de vídeo com múltiplas fontes
+func (s *WhatsAppService) SendVideoMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string, jpegThumbnail []byte) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Cria o serviço de fonte de mídia
+	mediaSourceService := NewMediaSourceService(nil, GetProjectRoot())
+
+	// Prepara a requisição de mídia
+	sourceReq := MediaSourceRequest{
+		Base64:   base64Data,
+		FilePath: filePath,
+		URL:      url,
+		MinioID:  minioID,
+		MimeType: mimeType,
+	}
+
+	// Processa a fonte de mídia
+	sourceResult, err := mediaSourceService.ProcessMediaSource(sourceReq, domain.MessageTypeVideo)
+	if err != nil {
+		return fmt.Errorf("failed to process media source: %w", err)
+	}
+
+	// Processa a mídia para upload
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaFromSource(sourceResult, domain.MessageTypeVideo)
+	if err != nil {
+		return fmt.Errorf("failed to process media: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaVideo)
+	if err != nil {
+		return fmt.Errorf("failed to upload video: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de vídeo seguindo a implementação de referência
+	msg := &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(processed.Data))), // Tamanho dos dados originais
+			Caption:       &caption,
+			JPEGThumbnail: jpegThumbnail, // Thumbnail opcional
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("source", sourceResult.Source).
+			Msg("Failed to send video message")
+		return fmt.Errorf("failed to send video message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Str("source", sourceResult.Source).
+		Str("caption", caption).
+		Msg("Video message sent successfully")
+
+	return nil
+}
+
+// EditMessage edita uma mensagem de texto existente
+func (s *WhatsAppService) EditMessage(sessionName, to, messageID, newText string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Determina se a mensagem é nossa ou não baseado no prefixo
+	fromMe := false
+	actualMessageID := messageID
+	if strings.HasPrefix(messageID, "me:") {
+		fromMe = true
+		actualMessageID = messageID[len("me:"):]
+	}
+
+	// Cria a mensagem de texto para edição
+	msg := &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text: proto.String(newText),
+		},
+	}
+
+	// Usa o método BuildEdit do whatsmeow para criar a mensagem de edição
+	editMsg := waClient.Client.BuildEdit(recipient, actualMessageID, msg)
+
+	// Envia a edição
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, editMsg, whatsmeow.SendRequestExtra{})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", actualMessageID).
+			Str("new_text", newText).
+			Bool("from_me", fromMe).
+			Msg("Failed to edit message")
+		return fmt.Errorf("failed to edit message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", actualMessageID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("new_text", newText).
+		Bool("from_me", fromMe).
+		Msg("Message edited successfully")
+
+	return nil
+}
+
+// SendPollMessage envia uma mensagem de enquete (apenas para grupos)
+func (s *WhatsAppService) SendPollMessage(sessionName, to, header string, options []string, maxSelections int) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Verifica se é um grupo (enquetes só funcionam em grupos)
+	if recipient.Server != "g.us" {
+		return fmt.Errorf("polls can only be sent to groups")
+	}
+
+	// Define maxSelections padrão se não fornecido
+	if maxSelections <= 0 {
+		maxSelections = 1
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Usa o método BuildPollCreation do whatsmeow
+	pollMsg := waClient.Client.BuildPollCreation(header, options, maxSelections)
+
+	// Envia a enquete
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, pollMsg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("header", header).
+			Int("options_count", len(options)).
+			Int("max_selections", maxSelections).
+			Msg("Failed to send poll message")
+		return fmt.Errorf("failed to send poll message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("header", header).
+		Int("options_count", len(options)).
+		Int("max_selections", maxSelections).
+		Msg("Poll message sent successfully")
+
+	return nil
+}
+
+// SendListMessage envia uma mensagem de lista interativa
+func (s *WhatsAppService) SendListMessage(sessionName, to, header, body, footer, buttonText string, sections []domain.ListSection) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Converte as seções para o formato do whatsmeow
+	var listSections []*waProto.ListMessage_Section
+	for _, section := range sections {
+		var rows []*waProto.ListMessage_Row
+		for _, item := range section.Rows {
+			rows = append(rows, &waProto.ListMessage_Row{
+				Title:       proto.String(item.Title),
+				Description: proto.String(item.Description),
+				RowID:       proto.String(item.RowID),
+			})
+		}
+
+		listSections = append(listSections, &waProto.ListMessage_Section{
+			Title: proto.String(section.Title),
+			Rows:  rows,
+		})
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de lista
+	msg := &waProto.Message{
+		ListMessage: &waProto.ListMessage{
+			Title:       proto.String(header),
+			Description: proto.String(body),
+			FooterText:  proto.String(footer),
+			ButtonText:  proto.String(buttonText),
+			ListType:    waProto.ListMessage_SINGLE_SELECT.Enum(),
+			Sections:    listSections,
+		},
+	}
+
+	// Envia a lista
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("header", header).
+			Int("sections_count", len(sections)).
+			Msg("Failed to send list message")
+		return fmt.Errorf("failed to send list message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("header", header).
+		Int("sections_count", len(sections)).
+		Msg("List message sent successfully")
 
 	return nil
 }

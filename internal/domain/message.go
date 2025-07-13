@@ -13,6 +13,13 @@ const (
 	MessageTypeAudio    MessageType = "audio"
 	MessageTypeDocument MessageType = "document"
 	MessageTypeSticker  MessageType = "sticker"
+	MessageTypeLocation MessageType = "location"
+	MessageTypeContact  MessageType = "contact"
+	MessageTypeReaction MessageType = "reaction"
+	MessageTypeVideo    MessageType = "video"
+	MessageTypeEdit     MessageType = "edit"
+	MessageTypePoll     MessageType = "poll"
+	MessageTypeList     MessageType = "list"
 )
 
 // Constantes para tipos MIME suportados
@@ -29,6 +36,12 @@ const (
 	MimeTypeAudioMPEG    = "audio/mpeg" // MP3 padrão
 	MimeTypeAudioWAV     = "audio/wav"
 	MimeTypeAudioAAC     = "audio/aac"
+
+	// Vídeo
+	MimeTypeVideoMP4       = "video/mp4"
+	MimeTypeVideoAVI       = "video/avi"
+	MimeTypeVideoQuicktime = "video/quicktime"
+	MimeTypeVideoWebM      = "video/webm"
 
 	// Documentos
 	MimeTypePDF  = "application/pdf"
@@ -112,6 +125,79 @@ type SendStickerMessageRequest struct {
 	MimeType string `json:"mimeType,omitempty"` // Deve ser image/webp
 }
 
+// SendLocationMessageRequest estrutura para envio de localização
+type SendLocationMessageRequest struct {
+	BaseMessageRequest
+	Latitude  float64 `json:"latitude" validate:"required"`  // Latitude da localização
+	Longitude float64 `json:"longitude" validate:"required"` // Longitude da localização
+	Name      string  `json:"name,omitempty"`                // Nome do local (opcional)
+}
+
+// SendContactMessageRequest estrutura para envio de contato
+type SendContactMessageRequest struct {
+	BaseMessageRequest
+	Name  string `json:"name" validate:"required"`  // Nome do contato
+	Vcard string `json:"vcard" validate:"required"` // Dados do contato no formato vCard
+}
+
+// ReactToMessageRequest estrutura para reagir a uma mensagem
+type ReactToMessageRequest struct {
+	BaseMessageRequest
+	MessageID string `json:"messageId" validate:"required"` // ID da mensagem para reagir
+	Reaction  string `json:"reaction" validate:"required"`  // Emoji da reação (ou "remove" para remover)
+}
+
+// SendVideoMessageRequest estrutura para envio de vídeo
+type SendVideoMessageRequest struct {
+	BaseMessageRequest
+	// Múltiplas formas de especificar o vídeo (apenas uma deve ser fornecida)
+	Video         string `json:"video,omitempty"`         // base64: "data:video/mp4;base64,..."
+	FilePath      string `json:"filePath,omitempty"`      // Caminho local: "assets/video.mp4"
+	URL           string `json:"url,omitempty"`           // URL externa: "https://example.com/video.mp4"
+	MinioID       string `json:"minioId,omitempty"`       // ID do MinIO: "media/2025/01/02/video_123.mp4"
+	Caption       string `json:"caption,omitempty"`       // Legenda opcional
+	MimeType      string `json:"mimeType,omitempty"`      // Tipo MIME (detectado automaticamente se não fornecido)
+	JPEGThumbnail []byte `json:"jpegThumbnail,omitempty"` // Thumbnail JPEG opcional
+}
+
+// EditMessageRequest estrutura para editar uma mensagem
+type EditMessageRequest struct {
+	BaseMessageRequest
+	MessageID string `json:"messageId" validate:"required"` // ID da mensagem para editar
+	NewText   string `json:"newText" validate:"required"`   // Novo texto da mensagem
+}
+
+// SendPollMessageRequest estrutura para envio de enquete
+type SendPollMessageRequest struct {
+	BaseMessageRequest
+	Header        string   `json:"header" validate:"required"`  // Título da enquete
+	Options       []string `json:"options" validate:"required"` // Opções da enquete
+	MaxSelections int      `json:"maxSelections,omitempty"`     // Máximo de seleções (padrão: 1)
+}
+
+// ListItem representa um item de lista
+type ListItem struct {
+	Title       string `json:"title" validate:"required"` // Título do item
+	Description string `json:"description,omitempty"`     // Descrição opcional
+	RowID       string `json:"rowId" validate:"required"` // ID único do item
+}
+
+// ListSection representa uma seção da lista
+type ListSection struct {
+	Title string     `json:"title,omitempty"` // Título da seção (opcional)
+	Rows  []ListItem `json:"rows"`            // Itens da seção
+}
+
+// SendListMessageRequest estrutura para envio de lista interativa
+type SendListMessageRequest struct {
+	BaseMessageRequest
+	Header     string        `json:"header" validate:"required"`     // Cabeçalho da lista
+	Body       string        `json:"body,omitempty"`                 // Corpo da mensagem (opcional)
+	Footer     string        `json:"footer,omitempty"`               // Rodapé (opcional)
+	ButtonText string        `json:"buttonText" validate:"required"` // Texto do botão
+	Sections   []ListSection `json:"sections" validate:"required"`   // Seções da lista
+}
+
 // MessageResponse estrutura de resposta padronizada para envio de mensagens
 type MessageResponse struct {
 	Success   bool      `json:"success"`
@@ -186,9 +272,16 @@ var ValidMimeTypes = map[MessageType][]string{
 		"application/msword",
 		"application/vnd.ms-excel",
 		"application/vnd.ms-powerpoint",
+		"application/octet-stream", // Arquivos genéricos (GitHub às vezes retorna isso)
 	},
 	MessageTypeSticker: {
 		MimeTypeImageWebP,
+	},
+	MessageTypeVideo: {
+		MimeTypeVideoMP4,
+		MimeTypeVideoAVI,
+		MimeTypeVideoQuicktime,
+		MimeTypeVideoWebM,
 	},
 }
 
