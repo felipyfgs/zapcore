@@ -132,6 +132,56 @@ referencia/
 docs/private/
 scripts/private/
 
+# Arquivos do Augment (ferramenta de desenvolvimento)
+.augment/
+*.augment
+.augment-*
+
+# Arquivos de desenvolvimento e ferramentas
+.devcontainer/
+.codespaces/
+.replit
+.replit.nix
+
+# Arquivos de análise e profiling
+*.trace
+*.mem
+*.cpu
+*.block
+*.mutex
+
+# Arquivos de documentação temporária
+docs/temp/
+docs/draft/
+*.draft.md
+*.temp.md
+
+# Arquivos de configuração de desenvolvimento
+.air.conf
+.realize.yaml
+.fresh.conf
+
+# Arquivos de teste específicos
+test_data/
+testdata/
+fixtures/
+mocks/
+
+# Arquivos de assets grandes (usar Git LFS se necessário)
+assets/*.mp4
+assets/*.avi
+assets/*.mov
+assets/*.mkv
+assets/*.webm
+assets/large/
+
+# Arquivos de backup automático
+*.orig
+*.rej
+*~
+.#*
+#*#
+
 # Node modules (se houver frontend)
 node_modules/
 npm-debug.log*
