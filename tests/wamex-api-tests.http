@@ -1,0 +1,164 @@
+### WAMEX API Tests
+### Sistema de Envio de Mensagens WhatsApp
+### Teste todos os tipos de mensagem implementados
+
+@baseUrl = http://localhost:8080
+@sessionName = teste
+@testPhone = 559981769536
+
+### ============================================
+### 1. TESTE DE MENSAGEM DE TEXTO
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "📝 TESTE 1/5: Mensagem de TEXTO do sistema WAMEX! Sistema funcionando perfeitamente! ✅"
+}
+
+### ============================================
+### 2. TESTE DE MENSAGEM DE IMAGEM
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "caption": "🖼️ TESTE 2/5: Imagem do sistema WAMEX! Enviada via API com sucesso! ✅",
+  "filename": "teste-wamex.png"
+}
+
+### ============================================
+### 3. TESTE DE MENSAGEM DE ÁUDIO
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "audio": "data:audio/ogg;base64,T2dnUwACAAAAAAAAAABKAAAAAAAAAHhPcHVzSGVhZAEIAEBfAAAAAABPZ2dTAAIAAAAAAAAAAEoBAAAAAAAAAOpPcHVzVGFncwAAAABSZWNvcmRlcgAAAE9nZ1MAAgAAAAAAAAAAShAAAAAAAAAA",
+  "caption": "🎵 TESTE 3/5: Áudio do sistema WAMEX! Mensagem de voz enviada via API! ✅",
+  "ptt": true
+}
+
+### ============================================
+### 4. TESTE DE MENSAGEM DE DOCUMENTO
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "document": "data:text/plain;base64,VGVzdGUgZG8gc2lzdGVtYSBXQU1FWCEKCkVzdGUgw6kgdW0gYXJxdWl2byBkZSB0ZXN0ZSBkbyBzaXN0ZW1hIFdBTUVYLgoKRnVuY2lvbmFsaWRhZGVzIHRlc3RhZGFzOgotIEVudmlvIGRlIHRleHRvCi0gRW52aW8gZGUgaW1hZ2VtCi0gRW52aW8gZGUgw6F1ZGlvCi0gRW52aW8gZGUgZG9jdW1lbnRvCi0gRW52aW8gZGUgc3RpY2tlcgoKU2lzdGVtYSBmdW5jaW9uYW5kbyBwZXJmZWl0YW1lbnRlISDinIUK",
+  "filename": "teste-wamex.txt",
+  "caption": "📄 TESTE 4/5: Documento do sistema WAMEX! Arquivo enviado via API! ✅"
+}
+
+### ============================================
+### 5. TESTE DE MENSAGEM DE STICKER
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/sticker
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "sticker": "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA="
+}
+
+### ============================================
+### TESTES ADICIONAIS - GERENCIAMENTO DE SESSÃO
+### ============================================
+
+### Verificar status da sessão
+GET {{baseUrl}}/sessions/{{sessionName}}/status
+
+### Listar todas as sessões
+GET {{baseUrl}}/sessions/list
+
+### Obter informações da sessão
+GET {{baseUrl}}/sessions/{{sessionName}}/info
+
+### ============================================
+### TESTES COM ID DA SESSÃO (em vez do nome)
+### ============================================
+
+@sessionId = 63a51a19-71fc-43d7-ad05-bf15d2ad261b
+
+### Teste de texto com ID da sessão
+POST {{baseUrl}}/message/{{sessionId}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🆔 TESTE COM ID: Mensagem enviada usando ID da sessão em vez do nome! ✅"
+}
+
+### ============================================
+### TESTES DE VALIDAÇÃO E ERRO
+### ============================================
+
+### Teste com telefone inválido
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "123",
+  "body": "Teste com telefone inválido"
+}
+
+### Teste com sessão inexistente
+POST {{baseUrl}}/message/sessao-inexistente/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "Teste com sessão inexistente"
+}
+
+### Teste com imagem inválida
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,INVALID_BASE64",
+  "caption": "Teste com base64 inválido"
+}
+
+### ============================================
+### TESTE DE PERFORMANCE - MÚLTIPLAS MENSAGENS
+### ============================================
+
+### Mensagem 1
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🚀 TESTE DE PERFORMANCE 1/3: Primeira mensagem em sequência!"
+}
+
+### Mensagem 2
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🚀 TESTE DE PERFORMANCE 2/3: Segunda mensagem em sequência!"
+}
+
+### Mensagem 3
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🚀 TESTE DE PERFORMANCE 3/3: Terceira mensagem em sequência! Teste concluído! ✅"
+}

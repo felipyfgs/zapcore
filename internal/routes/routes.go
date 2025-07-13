@@ -4,26 +4,31 @@ import (
 	"net/http"
 
 	"wamex/internal/handler"
+	"wamex/internal/middleware"
+	"wamex/internal/service"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // Router configura e retorna todas as rotas da aplicação
-func SetupRoutes(sessionHandler *handler.SessionHandler) chi.Router {
+func SetupRoutes(sessionHandler *handler.SessionHandler, whatsappService *service.WhatsAppService) chi.Router {
 	router := chi.NewRouter()
 
 	// Middleware básicos do Chi
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
+	router.Use(chimiddleware.Logger)
+	router.Use(chimiddleware.Recoverer)
+	router.Use(chimiddleware.RequestID)
+	router.Use(chimiddleware.RealIP)
 
 	// Middleware customizados para CORS e headers
 	router.Use(corsMiddleware)
 	router.Use(jsonMiddleware)
 
-	// Grupo de rotas para sessões
+	// Cria o middleware de resolução de sessão
+	sessionResolver := middleware.NewSessionResolver(whatsappService)
+
+	// Grupo de rotas para gerenciamento de sessões
 	router.Route("/sessions", func(r chi.Router) {
 		// POST /sessions/add - Cria uma nova sessão do WhatsApp
 		r.Post("/add", sessionHandler.CreateSession)
@@ -31,29 +36,53 @@ func SetupRoutes(sessionHandler *handler.SessionHandler) chi.Router {
 		// GET /sessions/list - Lista todas as sessões ativas e registradas
 		r.Get("/list", sessionHandler.ListSessions)
 
-		// GET /sessions/list/{session} - Retorna informações detalhadas de uma sessão específica
-		r.Get("/list/{session}", sessionHandler.GetSession)
+		// Grupo de rotas que precisam do middleware de resolução universal
+		r.Route("/", func(sr chi.Router) {
+			// Aplica o middleware de resolução universal para todas as rotas com {sessionID}
+			sr.Use(sessionResolver.Middleware())
 
-		// DELETE /sessions/del/{session} - Remove permanentemente uma sessão existente
-		r.Delete("/del/{session}", sessionHandler.DeleteSession)
+			// GET /sessions/{sessionID}/info - Retorna informações detalhadas de uma sessão específica (aceita ID ou Name)
+			sr.Get("/{sessionID}/info", sessionHandler.GetSession)
 
-		// POST /sessions/connect/{session} - Estabelece a conexão da sessão com o WhatsApp
-		r.Post("/connect/{session}", sessionHandler.ConnectSession)
+			// DELETE /sessions/{sessionID}/delete - Remove permanentemente uma sessão existente (aceita ID ou Name)
+			sr.Delete("/{sessionID}/delete", sessionHandler.DeleteSession)
 
-		// POST /sessions/disconnect/{session} - Desconecta a sessão do WhatsApp
-		r.Post("/disconnect/{session}", sessionHandler.DisconnectSession)
+			// POST /sessions/{sessionID}/connect - Estabelece a conexão da sessão com o WhatsApp (aceita ID ou Name)
+			sr.Post("/{sessionID}/connect", sessionHandler.ConnectSession)
 
-		// GET /sessions/status/{session} - Consulta o status atual da sessão
-		r.Get("/status/{session}", sessionHandler.GetSessionStatus)
+			// POST /sessions/{sessionID}/disconnect - Desconecta a sessão do WhatsApp (aceita ID ou Name)
+			sr.Post("/{sessionID}/disconnect", sessionHandler.DisconnectSession)
 
-		// GET /sessions/qr/{session} - Gera e retorna o QR Code para autenticação
-		r.Get("/qr/{session}", sessionHandler.GetQRCode)
+			// GET /sessions/{sessionID}/status - Consulta o status atual da sessão (aceita ID ou Name)
+			sr.Get("/{sessionID}/status", sessionHandler.GetSessionStatus)
 
-		// POST /sessions/pairphone/{session} - Emparelha um telefone com a sessão
-		r.Post("/pairphone/{session}", sessionHandler.PairPhone)
+			// GET /sessions/{sessionID}/qr - Gera e retorna o QR Code para autenticação (aceita ID ou Name)
+			sr.Get("/{sessionID}/qr", sessionHandler.GetQRCode)
 
-		// POST /sessions/send/{session} - Envia mensagem de texto
-		r.Post("/send/{session}", sessionHandler.SendTextMessage)
+			// POST /sessions/{sessionID}/pairphone - Emparelha um telefone com a sessão (aceita ID ou Name)
+			sr.Post("/{sessionID}/pairphone", sessionHandler.PairPhone)
+		})
+	})
+
+	// Grupo de rotas para envio de mensagens
+	router.Route("/message", func(r chi.Router) {
+		// Aplica o middleware de resolução universal para todas as rotas com {sessionID}
+		r.Use(sessionResolver.Middleware())
+
+		// POST /message/{sessionID}/send/text - Envia mensagem de texto (aceita ID ou Name)
+		r.Post("/{sessionID}/send/text", sessionHandler.SendTextMessage)
+
+		// POST /message/{sessionID}/send/document - Envia mensagem de documento (aceita ID ou Name)
+		r.Post("/{sessionID}/send/document", sessionHandler.SendDocumentMessage)
+
+		// POST /message/{sessionID}/send/audio - Envia mensagem de áudio (aceita ID ou Name)
+		r.Post("/{sessionID}/send/audio", sessionHandler.SendAudioMessage)
+
+		// POST /message/{sessionID}/send/image - Envia mensagem de imagem (aceita ID ou Name)
+		r.Post("/{sessionID}/send/image", sessionHandler.SendImageMessage)
+
+		// POST /message/{sessionID}/send/sticker - Envia mensagem de sticker (aceita ID ou Name)
+		r.Post("/{sessionID}/send/sticker", sessionHandler.SendStickerMessage)
 	})
 
 	// Rota de health check

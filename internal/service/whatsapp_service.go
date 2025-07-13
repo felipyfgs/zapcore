@@ -22,6 +22,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	"wamex/internal/domain"
 	"wamex/pkg/logger"
@@ -126,7 +127,7 @@ func (s *WhatsAppService) connectOnStartup() {
 			// Aguarda um tempo aleatório para evitar sobrecarga
 			time.Sleep(time.Duration(1+len(sess.ID)%5) * time.Second)
 
-			logger.WithSession(sess.ID).Info().
+			logger.WithComponent("whatsapp").Info().
 				Str("session_name", sess.Session).
 				Str("device_jid", sess.DeviceJID).
 				Msg("Auto-reconnecting session")
@@ -159,13 +160,37 @@ func (s *WhatsAppService) CreateSession(req *domain.CreateSessionRequest) (*doma
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	logger.WithComponent("whatsapp").Info().Str("session_id", sessionID).Str("session_name", req.Session).Msg("Session created successfully")
+	logger.WithComponent("whatsapp").Info().Str("session_name", req.Session).Msg("Session created successfully")
 	return session, nil
 }
 
 // GetSession obtém uma sessão por nome
 func (s *WhatsAppService) GetSession(sessionName string) (*domain.Session, error) {
 	return s.repository.GetBySession(sessionName)
+}
+
+// GetSessionByID obtém uma sessão por ID ou nome
+func (s *WhatsAppService) GetSessionByID(sessionID string) (*domain.Session, error) {
+	// Primeiro tenta buscar por ID
+	session, err := s.repository.GetByID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("error searching by ID: %w", err)
+	}
+
+	// Se não encontrou por ID, tenta buscar por nome da sessão
+	if session == nil {
+		session, err = s.repository.GetBySession(sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("error searching by session name: %w", err)
+		}
+
+		// Se ainda não encontrou, retorna erro
+		if session == nil {
+			return nil, fmt.Errorf("session not found: %s", sessionID)
+		}
+	}
+
+	return session, nil
 }
 
 // ListSessions lista todas as sessões
@@ -268,10 +293,10 @@ func (s *WhatsAppService) DisconnectSession(sessionName string) error {
 
 	// Atualiza status no banco
 	if err := s.UpdateSessionStatus(session.ID, domain.StatusDisconnected); err != nil {
-		logger.WithComponent("whatsapp").Error().Err(err).Str("session_name", sessionName).Str("session_id", session.ID).Msg("Failed to update session status")
+		logger.WithComponent("whatsapp").Error().Err(err).Str("session_name", sessionName).Msg("Failed to update session status")
 	}
 
-	logger.WithComponent("whatsapp").Info().Str("session_name", sessionName).Str("session_id", session.ID).Msg("Session disconnected")
+	logger.WithComponent("whatsapp").Info().Str("session_name", sessionName).Msg("Session disconnected")
 	return nil
 }
 
@@ -384,9 +409,543 @@ func (s *WhatsAppService) SendTextMessage(sessionName, to, message string) error
 	return nil
 }
 
+// SendImageMessage envia uma mensagem de imagem
+func (s *WhatsAppService) SendImageMessage(sessionName, to, imageData, caption, mimeType string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Processa a mídia
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaForUpload(imageData, domain.MessageTypeImage)
+	if err != nil {
+		return fmt.Errorf("failed to process image: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaImage)
+	if err != nil {
+		return fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de imagem
+	msg := &waProto.Message{
+		ImageMessage: &waProto.ImageMessage{
+			Caption:       &caption,
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(processed.Size)),
+			JPEGThumbnail: processed.Thumbnail,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Msg("Failed to send image message")
+		return fmt.Errorf("failed to send image message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Msg("Image message sent successfully")
+
+	return nil
+}
+
+// SendImageMessageMultiSource envia uma mensagem de imagem com múltiplas fontes
+func (s *WhatsAppService) SendImageMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Cria o serviço de fonte de mídia
+	mediaSourceService := NewMediaSourceService(nil, GetProjectRoot())
+
+	// Prepara a requisição de mídia
+	sourceReq := MediaSourceRequest{
+		Base64:   base64Data,
+		FilePath: filePath,
+		URL:      url,
+		MinioID:  minioID,
+		MimeType: mimeType,
+	}
+
+	// Processa a fonte de mídia
+	sourceResult, err := mediaSourceService.ProcessMediaSource(sourceReq, domain.MessageTypeImage)
+	if err != nil {
+		return fmt.Errorf("failed to process media source: %w", err)
+	}
+
+	// Processa a mídia para upload
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaFromSource(sourceResult, domain.MessageTypeImage)
+	if err != nil {
+		return fmt.Errorf("failed to process media: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaImage)
+	if err != nil {
+		return fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de imagem
+	msg := &waProto.Message{
+		ImageMessage: &waProto.ImageMessage{
+			Caption:       &caption,
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(processed.Size)),
+			JPEGThumbnail: processed.Thumbnail,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("source", sourceResult.Source).
+			Msg("Failed to send image message")
+		return fmt.Errorf("failed to send image message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Str("source", sourceResult.Source).
+		Str("filename", processed.Filename).
+		Msg("Image message sent successfully")
+
+	return nil
+}
+
+// SendAudioMessage envia uma mensagem de áudio
+func (s *WhatsAppService) SendAudioMessage(sessionName, to, audioData string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Processa a mídia
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaForUpload(audioData, domain.MessageTypeAudio)
+	if err != nil {
+		return fmt.Errorf("failed to process audio: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaAudio)
+	if err != nil {
+		return fmt.Errorf("failed to upload audio: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de áudio (PTT = Push-to-Talk para mensagem de voz)
+	ptt := true
+	msg := &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(processed.Size)),
+			PTT:           &ptt,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Msg("Failed to send audio message")
+		return fmt.Errorf("failed to send audio message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Msg("Audio message sent successfully")
+
+	return nil
+}
+
+// SendAudioMessageMultiSource envia uma mensagem de áudio com múltiplas fontes
+func (s *WhatsAppService) SendAudioMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Cria o serviço de fonte de mídia
+	mediaSourceService := NewMediaSourceService(nil, GetProjectRoot())
+
+	// Prepara a requisição de mídia
+	sourceReq := MediaSourceRequest{
+		Base64:   base64Data,
+		FilePath: filePath,
+		URL:      url,
+		MinioID:  minioID,
+	}
+
+	// Processa a fonte de mídia
+	sourceResult, err := mediaSourceService.ProcessMediaSource(sourceReq, domain.MessageTypeAudio)
+	if err != nil {
+		return fmt.Errorf("failed to process media source: %w", err)
+	}
+
+	// Processa a mídia para upload
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaFromSource(sourceResult, domain.MessageTypeAudio)
+	if err != nil {
+		return fmt.Errorf("failed to process media: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaAudio)
+	if err != nil {
+		return fmt.Errorf("failed to upload audio: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de áudio seguindo a implementação de referência
+	ptt := true
+	mimeType := "audio/ogg; codecs=opus" // MIME type específico como na referência
+
+	msg := &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &mimeType, // Usar MIME type específico
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(processed.Data))), // Tamanho dos dados originais
+			PTT:           &ptt,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("source", sourceResult.Source).
+			Msg("Failed to send audio message")
+		return fmt.Errorf("failed to send audio message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Str("source", sourceResult.Source).
+		Str("filename", processed.Filename).
+		Msg("Audio message sent successfully")
+
+	return nil
+}
+
+// SendDocumentMessage envia uma mensagem de documento
+func (s *WhatsAppService) SendDocumentMessage(sessionName, to, documentData, filename, mimeType string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Processa a mídia
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaForUpload(documentData, domain.MessageTypeDocument)
+	if err != nil {
+		return fmt.Errorf("failed to process document: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaDocument)
+	if err != nil {
+		return fmt.Errorf("failed to upload document: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Usa o MIME type fornecido ou o detectado
+	finalMimeType := mimeType
+	if finalMimeType == "" {
+		finalMimeType = processed.MimeType
+	}
+
+	// Cria a mensagem de documento
+	msg := &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &finalMimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(processed.Size)),
+			FileName:      &filename,
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Str("filename", filename).
+			Msg("Failed to send document message")
+		return fmt.Errorf("failed to send document message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", finalMimeType).
+		Str("filename", filename).
+		Int64("file_size", processed.Size).
+		Msg("Document message sent successfully")
+
+	return nil
+}
+
+// SendStickerMessage envia uma mensagem de sticker
+func (s *WhatsAppService) SendStickerMessage(sessionName, to, stickerData string) error {
+	// Busca a sessão
+	session, err := s.repository.GetBySession(sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionName)
+	}
+
+	// Verifica se o cliente está conectado
+	s.clientsMutex.RLock()
+	waClient, exists := s.clients[session.ID]
+	s.clientsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not connected: %s", sessionName)
+	}
+
+	// Processa a mídia
+	mediaService := NewMediaService()
+	processed, err := mediaService.ProcessMediaForUpload(stickerData, domain.MessageTypeSticker)
+	if err != nil {
+		return fmt.Errorf("failed to process sticker: %w", err)
+	}
+
+	// Faz upload para WhatsApp
+	uploaded, err := mediaService.UploadMediaToWhatsApp(waClient.Client, processed.Data, whatsmeow.MediaImage)
+	if err != nil {
+		return fmt.Errorf("failed to upload sticker: %w", err)
+	}
+
+	// Parse do JID de destino
+	recipient, ok := s.parseJID(to)
+	if !ok {
+		return fmt.Errorf("invalid recipient JID: %s", to)
+	}
+
+	// Gera ID da mensagem
+	msgID := waClient.Client.GenerateMessageID()
+
+	// Cria a mensagem de sticker
+	msg := &waProto.Message{
+		StickerMessage: &waProto.StickerMessage{
+			URL:           &uploaded.URL,
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      &processed.MimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(processed.Size)),
+		},
+	}
+
+	// Envia a mensagem
+	resp, err := waClient.Client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: msgID})
+	if err != nil {
+		logger.WithComponent("whatsapp").Error().
+			Err(err).
+			Str("session_name", sessionName).
+			Str("recipient", to).
+			Str("message_id", msgID).
+			Msg("Failed to send sticker message")
+		return fmt.Errorf("failed to send sticker message: %w", err)
+	}
+
+	logger.WithComponent("whatsapp").Info().
+		Str("session_name", sessionName).
+		Str("recipient", to).
+		Str("message_id", msgID).
+		Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).
+		Str("mime_type", processed.MimeType).
+		Int64("file_size", processed.Size).
+		Msg("Sticker message sent successfully")
+
+	return nil
+}
+
 // startClient inicia o cliente WhatsApp para uma sessão
 func (s *WhatsAppService) startClient(sessionID string, session *domain.Session) {
-	logger.WithSession(sessionID).Info().Msg("Starting WhatsApp client")
+	logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("Starting WhatsApp client")
 
 	// Cria ou obtém device store
 	var deviceStore *store.Device
@@ -494,7 +1053,12 @@ func (s *WhatsAppService) handleNewLogin(waClient *WhatsAppClient) {
 
 // handleExistingLogin gerencia login existente
 func (s *WhatsAppService) handleExistingLogin(waClient *WhatsAppClient) {
-	logger.WithSession(waClient.SessionID).Info().Msg("Already logged in, connecting...")
+	// Busca informações da sessão para log mais detalhado
+	if session, err := s.repository.GetByID(waClient.SessionID); err == nil {
+		logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("Already logged in, connecting...")
+	} else {
+		logger.WithComponent("whatsapp").Info().Msg("Already logged in, connecting...")
+	}
 
 	err := waClient.Client.Connect()
 	if err != nil {
@@ -517,8 +1081,12 @@ func (s *WhatsAppService) processQREvents(waClient *WhatsAppClient, qrChan <-cha
 	for evt := range qrChan {
 		switch evt.Event {
 		case "code":
-			// Imprime QR code no terminal (útil para desenvolvimento)
-			logger.WithSession(waClient.SessionID).Info().Msg("QR Code gerado - escaneie com seu WhatsApp:")
+			// Busca informações da sessão para log mais detalhado
+			if session, err := s.repository.GetByID(waClient.SessionID); err == nil {
+				logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("QR Code generated - scan with your WhatsApp")
+			} else {
+				logger.WithComponent("whatsapp").Info().Msg("QR Code generated - scan with your WhatsApp")
+			}
 			qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
 			fmt.Printf("\nQR Code String: %s\n\n", evt.Code)
 
@@ -542,9 +1110,9 @@ func (s *WhatsAppService) processQREvents(waClient *WhatsAppClient, qrChan <-cha
 			session.UpdatedAt = time.Now()
 
 			if err := s.repository.Update(session); err != nil {
-				logger.WithSession(waClient.SessionID).Error().Err(err).Msg("Failed to update session with QR")
+				logger.WithComponent("whatsapp").Error().Err(err).Str("session_name", session.Session).Msg("Failed to update session with QR code")
 			} else {
-				logger.WithSession(waClient.SessionID).Info().Msg("QR code generated and saved")
+				logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("QR code generated and saved")
 			}
 
 		case "timeout":
@@ -563,7 +1131,12 @@ func (s *WhatsAppService) processQREvents(waClient *WhatsAppClient, qrChan <-cha
 			waClient.KillChannel <- true
 
 		case "success":
-			logger.WithSession(waClient.SessionID).Info().Msg("QR pairing successful")
+			// Busca informações da sessão para log mais detalhado
+			if session, err := s.repository.GetByID(waClient.SessionID); err == nil {
+				logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("QR pairing successful")
+			} else {
+				logger.WithComponent("whatsapp").Info().Msg("QR pairing successful")
+			}
 			s.UpdateSessionStatus(waClient.SessionID, domain.StatusConnected)
 
 			// Limpa QR code após sucesso
@@ -585,7 +1158,12 @@ func (s *WhatsAppService) createEventHandler(waClient *WhatsAppClient) func(inte
 	return func(rawEvt interface{}) {
 		switch evt := rawEvt.(type) {
 		case *events.Connected:
-			logger.WithSession(waClient.SessionID).Info().Msg("WhatsApp connected")
+			// Busca informações da sessão para log mais detalhado
+			if session, err := s.repository.GetByID(waClient.SessionID); err == nil {
+				logger.WithComponent("whatsapp").Info().Str("session_name", session.Session).Msg("WhatsApp connected")
+			} else {
+				logger.WithComponent("whatsapp").Info().Msg("WhatsApp connected")
+			}
 			s.UpdateSessionStatus(waClient.SessionID, domain.StatusConnected)
 
 			// Envia presença disponível

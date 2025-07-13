@@ -1,0 +1,306 @@
+### WAMEX Multi-Source Media Tests
+### Teste de envio de mídia com múltiplas fontes
+### Arquivos disponíveis: assets\audio.ogg, assets\image.jpeg, assets\pdf.pdf
+### Suporte para: Base64, Arquivo Local, URL Externa, MinIO ID
+
+@baseUrl = http://localhost:8080
+@sessionName = teste
+@testPhone = 559981769536
+
+### ============================================
+### 1. ENVIO COM BASE64 (método original)
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "caption": "🖼️ TESTE 1/4: Imagem via BASE64 ✅"
+}
+
+### ============================================
+### 2. ENVIO COM ARQUIVO LOCAL (JPEG REAL)
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/image.jpeg",
+  "caption": "🖼️ TESTE 2/4: Imagem JPEG via ARQUIVO LOCAL ✅"
+}
+
+### ============================================
+### 2.1. TESTE DE ÁUDIO COM ARQUIVO REAL
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/audio.ogg",
+  "caption": "🎵 Áudio OGG real via ARQUIVO LOCAL ✅",
+  "ptt": true
+}
+
+### ============================================
+### 2.2. TESTE DE PDF COM ARQUIVO REAL
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/pdf.pdf",
+  "filename": "documento-wamex.pdf",
+  "caption": "📄 PDF real via ARQUIVO LOCAL ✅"
+}
+
+### ============================================
+### 3. ENVIO COM URL EXTERNA
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "url": "https://via.placeholder.com/150x150.png?text=WAMEX+TEST",
+  "caption": "🖼️ TESTE 3/4: Imagem via URL EXTERNA ✅"
+}
+
+### ============================================
+### 4. ENVIO COM MINIO URL (IMPLEMENTADO!)
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "minioId": "https://minio.resolvecert.com/api/v1/download-shared-object/aHR0cHM6Ly9zMy5yZXNvbHZlY2VydC5jb20vdGVzdGUvYXVkaW8ub2dnP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QVdXQ1RBVVFFVzJGTkpXQjA3MTUlMkYyMDI1MDcxMyUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTA3MTNUMTY0MTI3WiZYLUFtei1FeHBpcmVzPTQzMTk4JlgtQW16LVNlY3VyaXR5LVRva2VuPWV5SmhiR2NpT2lKSVV6VXhNaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoWTJObGMzTkxaWGtpT2lKQlYxZERWRUZWVVVWWE1rWk9TbGRDTURjeE5TSXNJbVY0Y0NJNk1UYzFNalEyTnpJME55d2ljR0Z5Wlc1MElqb2lZV1J0YVc0aWZRLlM1Z0FZLUpTU1BGQXpfWkc1MVRDcDduNW5kSzZCYjBvNU0wMVhrZ3BWVkY4NW1TZ1ZPWnRXODg1elJ5VVZ6aW9PdW1kcVJYcFAtTldYaE0ybG16c1lnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZ2ZXJzaW9uSWQ9bnVsbCZYLUFtei1TaWduYXR1cmU9Yjc3NTNlNDQxNjIxNmE3Yjg3MGZmM2VlYmM0MzgyMjI4YzI4MTg1OTIwMGRiMTNkN2U2NzNiYWVmNDM4OWFhNw",
+  "caption": "🎵 TESTE 4/4: Áudio OGG via MINIO URL ✅",
+  "ptt": true
+}
+
+### ============================================
+### TESTE DE ÁUDIO COM ARQUIVO LOCAL
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/audio.ogg",
+  "caption": "🎵 Áudio via ARQUIVO LOCAL ✅",
+  "ptt": true
+}
+
+### ============================================
+### TESTE COMPLETO DE MINIO - TODAS AS FONTES
+### ============================================
+
+### MinIO - Áudio OGG
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "minioId": "https://minio.resolvecert.com/api/v1/download-shared-object/aHR0cHM6Ly9zMy5yZXNvbHZlY2VydC5jb20vdGVzdGUvYXVkaW8ub2dnP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QVdXQ1RBVVFFVzJGTkpXQjA3MTUlMkYyMDI1MDcxMyUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNTA3MTNUMTY0MTI3WiZYLUFtei1FeHBpcmVzPTQzMTk4JlgtQW16LVNlY3VyaXR5LVRva2VuPWV5SmhiR2NpT2lKSVV6VXhNaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoWTJObGMzTkxaWGtpT2lKQlYxZERWRUZWVVVWWE1rWk9TbGRDTURjeE5TSXNJbVY0Y0NJNk1UYzFNalEyTnpJME55d2ljR0Z5Wlc1MElqb2lZV1J0YVc0aWZRLlM1Z0FZLUpTU1BGQXpfWkc1MVRDcDduNW5kSzZCYjBvNU0wMVhrZ3BWVkY4NW1TZ1ZPWnRXODg1elJ5VVZ6aW9PdW1kcVJYcFAtTldYaE0ybG16c1lnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZ2ZXJzaW9uSWQ9bnVsbCZYLUFtei1TaWduYXR1cmU9Yjc3NTNlNDQxNjIxNmE3Yjg3MGZmM2VlYmM0MzgyMjI4YzI4MTg1OTIwMGRiMTNkN2U2NzNiYWVmNDM4OWFhNw",
+  "caption": "🎵 MINIO: Áudio OGG do MinIO ResolveCert! ✅",
+  "ptt": true
+}
+
+### ============================================
+### TESTE DE DOCUMENTO COM URL
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+  "filename": "documento-teste.pdf",
+  "caption": "📄 Documento via URL EXTERNA ✅"
+}
+
+### ============================================
+### TESTE DE STICKER COM ARQUIVO LOCAL
+### ============================================
+
+POST {{baseUrl}}/message/{{sessionName}}/send/sticker
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/sticker.webp"
+}
+
+### ============================================
+### TESTES DE VALIDAÇÃO
+### ============================================
+
+### Teste com múltiplas fontes (deve dar erro)
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "filePath": "acets/image.png",
+  "caption": "❌ ERRO: Múltiplas fontes fornecidas"
+}
+
+### Teste sem nenhuma fonte (deve dar erro)
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "caption": "❌ ERRO: Nenhuma fonte fornecida"
+}
+
+### Teste com arquivo inexistente
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "arquivo/inexistente.png",
+  "caption": "❌ ERRO: Arquivo não encontrado"
+}
+
+### Teste com URL inválida
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "url": "https://url-inexistente-12345.com/image.png",
+  "caption": "❌ ERRO: URL inválida"
+}
+
+### ============================================
+### EXEMPLOS DE ESTRUTURA DE ARQUIVOS
+### ============================================
+
+### Estrutura recomendada do projeto:
+### wamex/
+### ├── acets/              # Arquivos de teste
+### │   ├── audio.ogg       # Áudio de teste
+### │   ├── image.png       # Imagem de teste
+### │   ├── document.pdf    # Documento de teste
+### │   └── sticker.webp    # Sticker de teste
+### ├── assets/             # Recursos da aplicação
+### │   ├── images/
+### │   ├── audio/
+### │   └── documents/
+### └── uploads/            # Uploads temporários
+###     └── temp/
+
+### ============================================
+### COMANDOS ÚTEIS PARA PREPARAR ARQUIVOS
+### ============================================
+
+### Criar diretório de assets:
+### mkdir -p assets/images assets/audio assets/documents
+
+### Baixar imagem de teste:
+### curl -o assets/images/test.png "https://via.placeholder.com/300x300.png?text=WAMEX"
+
+### Converter imagem para WebP (sticker):
+### ffmpeg -i assets/images/test.png assets/images/test.webp
+
+### Verificar tipo MIME:
+### file --mime-type assets/images/test.png
+
+### ============================================
+### TESTE COMPLETO EM SEQUÊNCIA
+### ============================================
+
+### 1. Texto simples
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🚀 TESTE MULTI-SOURCE: Iniciando testes de múltiplas fontes de mídia!"
+}
+
+### 2. Imagem via Base64
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "caption": "✅ Base64 funcionando!"
+}
+
+### 3. Áudio via arquivo local
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "filePath": "acets/audio.ogg",
+  "caption": "✅ Arquivo local funcionando!",
+  "ptt": true
+}
+
+### 4. Imagem via URL
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "url": "https://via.placeholder.com/200x200.png?text=URL+OK",
+  "caption": "✅ URL externa funcionando!"
+}
+
+### 5. Finalização
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🎉 TESTE MULTI-SOURCE CONCLUÍDO! Sistema suporta Base64, Arquivos Locais, URLs e MinIO! ✅"
+}
+
+### ============================================
+### RESPOSTA ESPERADA
+### ============================================
+
+### Sucesso:
+### {
+###   "success": true,
+###   "message": "Image message sent successfully",
+###   "details": {
+###     "phone": "559981769536",
+###     "type": "image",
+###     "status": "sent",
+###     "sentAt": "2025-07-13T13:00:54.5681213-03:00",
+###     "sessionName": "teste",
+###     "mediaInfo": {
+###       "mimeType": "image/png",
+###       "filename": "test.png",
+###       "originalSize": 1024,
+###       "source": "file"
+###     }
+###   },
+###   "timestamp": "2025-07-13T13:00:54.5681213-03:00"
+### }
+
+### Erro:
+### {
+###   "success": false,
+###   "message": "apenas uma fonte de mídia deve ser fornecida, recebido: [image, filePath]",
+###   "timestamp": "2025-07-13T13:00:54.5681213-03:00"
+### }

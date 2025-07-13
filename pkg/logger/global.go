@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -16,9 +17,13 @@ func SetGlobal(logger *Logger) {
 // GetGlobal retorna o logger global
 func GetGlobal() *Logger {
 	if globalLogger == nil {
-		// Inicializa com configuração padrão se não foi configurado
+		// Inicializa apenas com InitFromEnv() que já configura o logger global
 		InitFromEnv()
-		globalLogger = New(DefaultConfig())
+		// Cria uma instância wrapper para manter compatibilidade
+		globalLogger = &Logger{
+			logger: log.Logger,
+			config: DefaultConfig(),
+		}
 	}
 	return globalLogger
 }
@@ -26,33 +31,33 @@ func GetGlobal() *Logger {
 // Funções de conveniência para usar o logger global
 
 // Debug registra uma mensagem de debug usando o logger global
-func Debug() *Logger {
-	return GetGlobal()
+func Debug() *zerolog.Event {
+	return GetGlobal().Debug()
 }
 
 // Info registra uma mensagem informativa usando o logger global
-func Info() *Logger {
-	return GetGlobal()
+func Info() *zerolog.Event {
+	return GetGlobal().Info()
 }
 
 // Warn registra uma mensagem de aviso usando o logger global
-func Warn() *Logger {
-	return GetGlobal()
+func Warn() *zerolog.Event {
+	return GetGlobal().Warn()
 }
 
 // Error registra uma mensagem de erro usando o logger global
-func Error() *Logger {
-	return GetGlobal()
+func Error() *zerolog.Event {
+	return GetGlobal().Error()
 }
 
 // Fatal registra uma mensagem fatal usando o logger global
-func Fatal() *Logger {
-	return GetGlobal()
+func Fatal() *zerolog.Event {
+	return GetGlobal().Fatal()
 }
 
 // Panic registra uma mensagem de pânico usando o logger global
-func Panic() *Logger {
-	return GetGlobal()
+func Panic() *zerolog.Event {
+	return GetGlobal().Panic()
 }
 
 // WithComponent cria um logger com componente específico usando o logger global
@@ -73,4 +78,31 @@ func WithRequestID(requestID string) *Logger {
 // WithFields cria um logger com múltiplos campos usando o logger global
 func WithFields(fields map[string]interface{}) *Logger {
 	return GetGlobal().WithFields(fields)
+}
+
+// Funções de conveniência para componentes específicos
+
+// Main cria um logger para o componente principal
+func Main() *zerolog.Event {
+	return log.Info().Str("component", "main")
+}
+
+// Database cria um logger para operações de banco de dados
+func Database() *zerolog.Event {
+	return log.Info().Str("component", "database")
+}
+
+// WhatsApp cria um logger para o serviço WhatsApp
+func WhatsApp() *zerolog.Event {
+	return log.Info().Str("component", "whatsapp")
+}
+
+// HTTP cria um logger para requisições HTTP
+func HTTP() *zerolog.Event {
+	return log.Info().Str("component", "http")
+}
+
+// Service cria um logger para serviços gerais
+func Service(serviceName string) *zerolog.Event {
+	return log.Info().Str("component", serviceName)
 }

@@ -84,6 +84,7 @@ type SessionRepository interface {
 type SessionService interface {
 	CreateSession(req *CreateSessionRequest) (*Session, error)
 	GetSession(sessionName string) (*Session, error)
+	GetSessionByID(sessionID string) (*Session, error)
 	UpdateSessionStatus(id string, status Status) error
 	DeleteSession(sessionName string) error
 	ListSessions() ([]*Session, error)
@@ -94,4 +95,10 @@ type SessionService interface {
 	GetSessionStatus(sessionName string) (*StatusResponse, error)
 	GetConnectedSessionsCount() int
 	SendTextMessage(sessionName, to, message string) error
+	SendImageMessage(sessionName, to, imageData, caption, mimeType string) error
+	SendImageMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string) error
+	SendAudioMessage(sessionName, to, audioData string) error
+	SendAudioMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID string) error
+	SendDocumentMessage(sessionName, to, documentData, filename, mimeType string) error
+	SendStickerMessage(sessionName, to, stickerData string) error
 }

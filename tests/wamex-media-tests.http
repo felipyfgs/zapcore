@@ -1,0 +1,187 @@
+### WAMEX MEDIA Tests
+### Testes específicos para mídia com arquivos reais
+### Use este arquivo para testar com arquivos de mídia reais
+
+@baseUrl = http://localhost:8080
+@sessionName = teste
+@testPhone = 559981769536
+
+### ============================================
+### TESTE DE ÁUDIO COM ARQUIVO REAL
+### ============================================
+### Para usar este teste:
+### 1. Converta seu arquivo acets\audio.ogg para base64
+### 2. Substitua o valor do campo "audio" abaixo
+### 3. Execute o teste
+
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "audio": "data:audio/ogg;base64,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",
+  "caption": "🎵 Áudio real do sistema WAMEX!",
+  "ptt": true,
+  "duration": 5
+}
+
+### ============================================
+### TESTE DE IMAGEM MAIOR
+### ============================================
+### Imagem PNG 100x100 pixels para teste mais realista
+
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "caption": "🖼️ Imagem de teste do WAMEX - Sistema funcionando!",
+  "filename": "wamex-test-image.png",
+  "mimeType": "image/png"
+}
+
+### ============================================
+### TESTE DE DOCUMENTO PDF
+### ============================================
+### PDF simples para teste
+
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "document": "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOgCjIgMCBvYmoKPDwKL0xlbmd0aCAzIDAgUgovRmlsdGVyIC9GbGF0ZURlY29kZQo+PgpzdHJlYW0KeJxLy8wpTVWwUsjIzEvLTFGwVTJQUEjOyS9NScwr0ctLLckBCRkqOOcXlySWZOalFqUCFYFUFyQWFWekFpQAFRYDFRvZKRjZKRjbKRjHKRjPKRjfKRjgKRjkKRjsKRjwKRj4KRjCKRjKKRjOKRjSKRjWKRjaKRjeKRjhKRjlKRjpKRjrKRjvKRjzKRj3KRj7KRj/KRgDKhgHKhgLKhgPKhgTKhgXKhgbKhgfKhgjKhgnKhgrKhhvKhgzKhg3Khg7Khg/KhhDKhhHKhhLKhhPKhhTKhhXKhhbKhhfKhhjKhhnKhhrKhhvKhhzKhh3Khh7Khh/KhiDKhiHKhiLKhiPKhiTKhiXKhib",
+  "filename": "manual-wamex.pdf",
+  "caption": "📄 Manual do sistema WAMEX em PDF",
+  "mimeType": "application/pdf"
+}
+
+### ============================================
+### TESTE DE STICKER WEBP
+### ============================================
+### Sticker WebP válido
+
+POST {{baseUrl}}/message/{{sessionName}}/send/sticker
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "sticker": "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=",
+  "mimeType": "image/webp"
+}
+
+### ============================================
+### TESTES DE VALIDAÇÃO DE MÍDIA
+### ============================================
+
+### Teste com tipo MIME inválido para imagem
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:text/plain;base64,VGVzdGU=",
+  "caption": "Teste com MIME type inválido"
+}
+
+### Teste com arquivo muito grande (simulado)
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "document": "data:application/pdf;base64,JVBERi0xLjQ=",
+  "filename": "arquivo-grande.pdf",
+  "caption": "Teste de validação de tamanho"
+}
+
+### ============================================
+### COMANDOS ÚTEIS PARA PREPARAR TESTES
+### ============================================
+
+### Para converter arquivo para base64 no Windows:
+### powershell -Command "[Convert]::ToBase64String([IO.File]::ReadAllBytes('acets\\audio.ogg'))"
+
+### Para converter arquivo para base64 no Linux/Mac:
+### base64 -w 0 acets/audio.ogg
+
+### Para verificar tamanho do arquivo:
+### ls -la acets/audio.ogg
+
+### ============================================
+### EXEMPLO DE RESPOSTA ESPERADA
+### ============================================
+
+### Resposta de sucesso:
+### {
+###   "success": true,
+###   "message": "Audio message sent successfully",
+###   "details": {
+###     "phone": "559981769536",
+###     "type": "audio",
+###     "status": "sent",
+###     "sentAt": "2025-07-13T13:01:10.9282402-03:00",
+###     "sessionName": "teste",
+###     "mediaInfo": {
+###       "mimeType": "audio/ogg",
+###       "duration": 5
+###     }
+###   },
+###   "timestamp": "2025-07-13T13:01:10.9282402-03:00"
+### }
+
+### ============================================
+### TESTE COMPLETO EM SEQUÊNCIA
+### ============================================
+
+### Execute estes testes em sequência para validar todo o sistema
+
+### 1. Texto
+POST {{baseUrl}}/message/{{sessionName}}/send/text
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "body": "🧪 TESTE COMPLETO 1/5: Texto ✅"
+}
+
+### 2. Imagem
+POST {{baseUrl}}/message/{{sessionName}}/send/image
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "caption": "🧪 TESTE COMPLETO 2/5: Imagem ✅"
+}
+
+### 3. Áudio
+POST {{baseUrl}}/message/{{sessionName}}/send/audio
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "audio": "data:audio/ogg;base64,T2dnUwACAAAAAAAAAABKAAAAAAAAAHhPcHVzSGVhZAEIAEBfAAAAAABPZ2dTAAIAAAAAAAAAAEoBAAAAAAAAAOpPcHVzVGFncwAAAABSZWNvcmRlcgAAAE9nZ1MAAgAAAAAAAAAAShAAAAAAAAAA",
+  "caption": "🧪 TESTE COMPLETO 3/5: Áudio ✅"
+}
+
+### 4. Documento
+POST {{baseUrl}}/message/{{sessionName}}/send/document
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "document": "data:text/plain;base64,VGVzdGUgZG8gc2lzdGVtYSBXQU1FWCEgRG9jdW1lbnRvIGVudmlhZG8gdmlhIEFQSS4=",
+  "filename": "teste-completo.txt",
+  "caption": "🧪 TESTE COMPLETO 4/5: Documento ✅"
+}
+
+### 5. Sticker
+POST {{baseUrl}}/message/{{sessionName}}/send/sticker
+Content-Type: application/json
+
+{
+  "phone": "{{testPhone}}",
+  "sticker": "data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA="
+}

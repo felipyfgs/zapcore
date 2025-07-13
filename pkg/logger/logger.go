@@ -3,6 +3,7 @@ package logger
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -111,24 +112,97 @@ func Init(config *Config) {
 	log.Logger = logger.logger
 }
 
-// InitFromEnv inicializa o logger baseado em variáveis de ambiente
+// DualOutputWriter implementa io.Writer que escreve JSON no arquivo e formato colorido no console
+type DualOutputWriter struct {
+	consoleWriter zerolog.ConsoleWriter
+	fileWriter    io.Writer
+}
+
+func (dw *DualOutputWriter) Write(p []byte) (n int, err error) {
+	// Escreve no console (formatado e colorido)
+	dw.consoleWriter.Write(p)
+
+	// Escreve no arquivo (JSON puro)
+	if dw.fileWriter != nil {
+		dw.fileWriter.Write(p)
+	}
+
+	return len(p), nil
+}
+
+// InitFromEnv inicializa o logger com saída dupla: console colorido + arquivo JSON
 func InitFromEnv() {
-	config := &Config{
-		Level:      LogLevel(getEnv("LOG_LEVEL", string(InfoLevel))),
-		Format:     LogFormat(getEnv("LOG_FORMAT", string(JSONFormat))),
-		Output:     os.Stdout,
-		TimeFormat: getEnv("LOG_TIME_FORMAT", time.RFC3339),
-		Caller:     getEnvAsBool("LOG_CALLER", true),
-		Stack:      getEnvAsBool("LOG_STACK", true),
+	// Configura o zerolog
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+	level := parseLogLevel(LogLevel(getEnv("LOG_LEVEL", string(InfoLevel))))
+	zerolog.SetGlobalLevel(level)
+	zerolog.TimeFieldFormat = getEnv("LOG_TIME_FORMAT", time.RFC3339)
+
+	// Verifica o formato configurado
+	logFormat := getEnv("LOG_FORMAT", "json")
+
+	// Cria o diretório de logs se não existir
+	logsDir := "logs"
+	os.MkdirAll(logsDir, 0755)
+
+	// Abre o arquivo de log
+	logFile, err := os.OpenFile(
+		filepath.Join(logsDir, "wamex.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0666,
+	)
+
+	var logger zerolog.Logger
+
+	if logFormat == "console" {
+		// Modo console: saída colorida no terminal + JSON no arquivo
+		consoleWriter := zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: "15:04:05",
+			NoColor:    false,
+		}
+
+		if err != nil {
+			// Se não conseguir abrir arquivo, usa apenas console
+			logger = zerolog.New(consoleWriter).With().
+				Timestamp().
+				Caller().
+				Str("env", getEnv("ENVIRONMENT", "development")).
+				Logger()
+		} else {
+			// Usa DualOutputWriter para console colorido + arquivo JSON
+			dualWriter := &DualOutputWriter{
+				consoleWriter: consoleWriter,
+				fileWriter:    logFile,
+			}
+			logger = zerolog.New(dualWriter).With().
+				Timestamp().
+				Caller().
+				Str("env", getEnv("ENVIRONMENT", "development")).
+				Logger()
+		}
+	} else {
+		// Modo JSON: saída JSON no terminal + arquivo
+		if err != nil {
+			// Se não conseguir abrir arquivo, usa apenas stdout
+			logger = zerolog.New(os.Stdout).With().
+				Timestamp().
+				Caller().
+				Str("env", getEnv("ENVIRONMENT", "development")).
+				Logger()
+		} else {
+			// Usa MultiWriter para JSON em ambos
+			multiWriter := io.MultiWriter(os.Stdout, logFile)
+			logger = zerolog.New(multiWriter).With().
+				Timestamp().
+				Caller().
+				Str("env", getEnv("ENVIRONMENT", "development")).
+				Logger()
+		}
 	}
 
-	// Configura output para stderr em desenvolvimento
-	if getEnv("ENVIRONMENT", "development") == "development" {
-		config.Output = os.Stderr
-		config.Format = ConsoleFormat
-	}
-
-	Init(config)
+	// Define como logger global
+	log.Logger = logger
 }
 
 // Debug registra uma mensagem de debug
@@ -172,7 +246,7 @@ func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
 	for key, value := range fields {
 		event = event.Interface(key, value)
 	}
-	
+
 	return &Logger{
 		logger: event.Logger(),
 		config: l.config,
@@ -240,21 +314,4 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-// getEnvAsBool obtém variável de ambiente como boolean
-func getEnvAsBool(key string, defaultValue bool) bool {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	
-	switch strings.ToLower(value) {
-	case "true", "1", "yes", "on":
-		return true
-	case "false", "0", "no", "off":
-		return false
-	default:
-		return defaultValue
-	}
 }
