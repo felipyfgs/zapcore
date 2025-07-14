@@ -66,47 +66,4 @@ type StatusResponse struct {
 	Message   string `json:"message"`
 }
 
-// SessionRepository define a interface para operações de sessão
-type SessionRepository interface {
-	Create(session *Session) error
-	GetByID(id string) (*Session, error)
-	GetBySession(sessionName string) (*Session, error)
-	GetByToken(token string) (*Session, error)
-	Update(session *Session) error
-	Delete(id string) error
-	DeleteBySession(sessionName string) error
-	List() ([]*Session, error)
-	GetActive() ([]*Session, error)
-	GetConnectedSessions() ([]*Session, error)
-}
-
-// SessionService define a interface para serviços de sessão
-type SessionService interface {
-	CreateSession(req *CreateSessionRequest) (*Session, error)
-	GetSession(sessionName string) (*Session, error)
-	GetSessionByID(sessionID string) (*Session, error)
-	UpdateSessionStatus(id string, status Status) error
-	DeleteSession(sessionName string) error
-	ListSessions() ([]*Session, error)
-	GenerateQRCode(sessionName string) (string, error)
-	ConnectSession(sessionName string) error
-	DisconnectSession(sessionName string) error
-	PairPhone(sessionName string, phone string) error
-	GetSessionStatus(sessionName string) (*StatusResponse, error)
-	GetConnectedSessionsCount() int
-	SendTextMessage(sessionName, to, message string) error
-	SendImageMessage(sessionName, to, imageData, caption, mimeType string) error
-	SendImageMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string) error
-	SendAudioMessage(sessionName, to, audioData string) error
-	SendAudioMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID string) error
-	SendDocumentMessage(sessionName, to, documentData, filename, mimeType string) error
-	SendDocumentMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, filename, mimeType string) error
-	SendStickerMessage(sessionName, to, stickerData string) error
-	SendLocationMessage(sessionName, to string, latitude, longitude float64, name string) error
-	SendContactMessage(sessionName, to, name, vcard string) error
-	ReactToMessage(sessionName, to, messageID, reaction string) error
-	SendVideoMessageMultiSource(sessionName, to, base64Data, filePath, url, minioID, caption, mimeType string, jpegThumbnail []byte) error
-	EditMessage(sessionName, to, messageID, newText string) error
-	SendPollMessage(sessionName, to, header string, options []string, maxSelections int) error
-	SendListMessage(sessionName, to, header, body, footer, buttonText string, sections []ListSection) error
-}
+// Interfaces movidas para interfaces.go

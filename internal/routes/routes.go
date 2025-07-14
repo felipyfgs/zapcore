@@ -12,7 +12,7 @@ import (
 )
 
 // Router configura e retorna todas as rotas da aplicação
-func SetupRoutes(sessionHandler *handler.SessionHandler, mediaHandler *handler.MediaHandler, whatsappService *service.WhatsAppService) chi.Router {
+func SetupRoutes(sessionHandler *handler.SessionHandler, messageHandler *handler.MessageHandler, mediaHandler *handler.MediaHandler, whatsappService *service.WhatsAppService) chi.Router {
 	router := chi.NewRouter()
 
 	// Middleware básicos do Chi
@@ -70,16 +70,16 @@ func SetupRoutes(sessionHandler *handler.SessionHandler, mediaHandler *handler.M
 		r.Use(sessionResolver.Middleware())
 
 		// POST /message/{sessionID}/send/text - Envia mensagem de texto (aceita ID ou Name)
-		r.Post("/{sessionID}/send/text", sessionHandler.SendTextMessage)
+		r.Post("/{sessionID}/send/text", messageHandler.SendTextMessage)
 
 		// POST /message/{sessionID}/send/document - Envia mensagem de documento (aceita ID ou Name)
 		r.Post("/{sessionID}/send/document", sessionHandler.SendDocumentMessage)
 
 		// POST /message/{sessionID}/send/audio - Envia mensagem de áudio (aceita ID ou Name)
-		r.Post("/{sessionID}/send/audio", sessionHandler.SendAudioMessage)
+		r.Post("/{sessionID}/send/audio", messageHandler.SendAudioMessage)
 
 		// POST /message/{sessionID}/send/image - Envia mensagem de imagem (aceita ID ou Name)
-		r.Post("/{sessionID}/send/image", sessionHandler.SendImageMessage)
+		r.Post("/{sessionID}/send/image", messageHandler.SendImageMessage)
 
 		// POST /message/{sessionID}/send/sticker - Envia mensagem de sticker (aceita ID ou Name)
 		r.Post("/{sessionID}/send/sticker", sessionHandler.SendStickerMessage)
