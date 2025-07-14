@@ -31,7 +31,6 @@ Implementar funcionalidades do Wuzapi no WAMEX mantendo a arquitetura Clean Arch
 - Session presence (available, unavailable, composing, etc.) - **Status da sessão**
 - Chat management (delete, markread, presence) - **Gerenciamento de conversas**
 - Group management (create, list, info, participants, etc.) - **Grupos da sessão**
-- Webhook management - **Notificações de eventos**
 - Advanced features (proxy, S3, newsletter) - **Recursos avançados**
 
 ## Alternativas Avaliadas
@@ -167,25 +166,13 @@ POST /group/{sessionID}/participants     - Gerenciar participantes
 4. **Transport Layer**
    - `internal/transport/http/handler/group.go`
 
-### 🎯 Fase 4: Webhook Management (Prioridade Média)
+### 🎯 Fase 4: Advanced Features (Prioridade Baixa)
 **Duração estimada**: 2-3 dias
-**Objetivo**: Implementar sistema de webhooks
-
-#### Funcionalidades
-```
-POST   /webhook/{sessionID}        - Configurar webhook
-GET    /webhook/{sessionID}        - Obter configuração webhook
-PUT    /webhook/{sessionID}        - Atualizar webhook
-DELETE /webhook/{sessionID}        - Remover webhook
-```
-
-### 🎯 Fase 5: Advanced Features (Prioridade Baixa)
-**Duração estimada**: 3-4 dias
 **Objetivo**: Implementar funcionalidades avançadas
 
 #### Funcionalidades
-- Configuração de proxy
-- Integração S3
+- Configuração de proxy para sessões
+- Integração S3 para storage alternativo
 - Gerenciamento de newsletters
 - Downloads específicos por tipo de mídia
 
@@ -297,23 +284,20 @@ internal/
 │   │   ├── media.go
 │   │   ├── contact.go       # 🆕 Fase 1 (ContactInfo, ContactPresence)
 │   │   ├── chat.go          # 🆕 Fase 2 (ChatAction, MessageDelete)
-│   │   ├── group.go         # 🆕 Fase 3 (GroupInfo, GroupParticipant)
-│   │   └── webhook.go       # 🆕 Fase 4 (WebhookConfig, WebhookEvent)
+│   │   └── group.go         # 🆕 Fase 3 (GroupInfo, GroupParticipant)
 │   ├── service/
 │   │   ├── whatsapp.go      # 🔄 Estendido com métodos contact/chat/group
 │   │   └── media.go         # Mantido separado (já existe)
 │   └── repository/
 │       ├── session.go       # Existente (Session = conexão WhatsApp)
-│       ├── media.go         # Existente
-│       └── webhook.go       # 🆕 Fase 4 (se necessário persistência)
+│       └── media.go         # Existente
 ├── usecase/
 │   ├── whatsapp/           # Existente (session management)
 │   ├── media/              # Existente (media processing)
 │   ├── contact/            # 🆕 Fase 1 (check_contact.go, get_contact_info.go, etc.)
 │   ├── session/            # 🆕 Fase 1 (set_presence.go - presença da sessão)
 │   ├── chat/               # 🆕 Fase 2 (delete_message.go, mark_read.go, etc.)
-│   ├── group/              # 🆕 Fase 3 (create_group.go, list_groups.go, etc.)
-│   └── webhook/            # 🆕 Fase 4 (manage_webhook.go)
+│   └── group/              # 🆕 Fase 3 (create_group.go, list_groups.go, etc.)
 ├── infra/
 │   ├── whatsapp/
 │   │   └── whatsapp_service.go  # 🔄 Estendido (não criar arquivos separados)
@@ -328,8 +312,7 @@ internal/
         │   ├── media.go     # Existente
         │   ├── contact.go   # 🆕 Fase 1 (check, info, avatar, list)
         │   ├── chat.go      # 🆕 Fase 2 (delete, markread, presence)
-        │   ├── group.go     # 🆕 Fase 3 (create, list, manage)
-        │   └── webhook.go   # 🆕 Fase 4 (CRUD webhooks)
+        │   └── group.go     # 🆕 Fase 3 (create, list, manage)
         └── router/
             └── router.go    # 🔄 Estendido com novas rotas
 ```
@@ -508,11 +491,8 @@ func (h *UserHandler) CheckUser(w http.ResponseWriter, r *http.Request) {
 ### Semana 3-4: Fase 3 - Group Management
 - Implementação completa de todas as funcionalidades de grupo
 
-### Semana 5: Fase 4 - Webhook Management
-- Sistema completo de webhooks
-
-### Semana 6: Fase 5 - Advanced Features
-- Funcionalidades avançadas e polimento
+### Semana 5: Fase 4 - Advanced Features
+- Funcionalidades avançadas e polimento final
 
 ---
 
