@@ -206,3 +206,10 @@ wamex-*
 test-*.json
 test-*.yaml
 *.test.json
+
+# Arquivos de teste na raiz do projeto
+/test-*
+/teste-*
+/*.test.*
+/relatorio-*.md
+/limpeza-*.md
