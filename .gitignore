@@ -132,6 +132,12 @@ referencia/
 docs/private/
 scripts/private/
 
+# Arquivos de migração (após conclusão)
+migration-backup/
+migration-*.md
+*-backup/
+*.backup.go
+
 # Arquivos do Augment (ferramenta de desenvolvimento)
 .augment/
 *.augment
@@ -191,3 +197,12 @@ yarn-error.log*
 # Arquivos de configuração local
 config.local.yaml
 config.local.json
+
+# Binários específicos do projeto
+wamex-*
+*-clean.exe
+
+# Arquivos de teste temporários
+test-*.json
+test-*.yaml
+*.test.json
