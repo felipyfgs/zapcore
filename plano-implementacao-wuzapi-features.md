@@ -27,11 +27,12 @@ Implementar funcionalidades do Wuzapi no WAMEX mantendo a arquitetura Clean Arch
 - Tratamento de erros padronizado
 
 ### 🆕 Funcionalidades do Wuzapi para implementar
-- User management (check, info, avatar, contacts, presence)
-- Chat management (delete, markread, presence)
-- Group management (create, list, info, participants, etc.)
-- Webhook management
-- Advanced features (proxy, S3, newsletter)
+- Contact management (check, info, avatar, list) - **Contatos de uma sessão**
+- Session presence (available, unavailable, composing, etc.) - **Status da sessão**
+- Chat management (delete, markread, presence) - **Gerenciamento de conversas**
+- Group management (create, list, info, participants, etc.) - **Grupos da sessão**
+- Webhook management - **Notificações de eventos**
+- Advanced features (proxy, S3, newsletter) - **Recursos avançados**
 
 ## Alternativas Avaliadas
 
@@ -63,38 +64,42 @@ Implementar funcionalidades do Wuzapi no WAMEX mantendo a arquitetura Clean Arch
 
 ## Plano de Implementação
 
-### 🎯 Fase 1: User Management (Prioridade Alta)
+### 🎯 Fase 1: Contact & Presence Management (Prioridade Alta)
 **Duração estimada**: 2-3 dias
-**Objetivo**: Implementar funcionalidades básicas de gerenciamento de usuários
+**Objetivo**: Implementar funcionalidades de gerenciamento de contatos e presença da sessão
 
 #### Funcionalidades
 ```
-POST /user/{sessionID}/check     - Verificar se número está no WhatsApp
-POST /user/{sessionID}/info      - Obter informações detalhadas do usuário
-POST /user/{sessionID}/avatar    - Obter avatar do usuário
-GET  /user/{sessionID}/contacts  - Listar contatos da sessão
-POST /user/{sessionID}/presence  - Definir status de presença
+POST /contact/{sessionID}/check     - Verificar se número está no WhatsApp
+POST /contact/{sessionID}/info      - Obter informações de um contato
+POST /contact/{sessionID}/avatar    - Obter avatar de um contato
+GET  /contact/{sessionID}/list      - Listar contatos da sessão
+POST /session/{sessionID}/presence  - Definir status de presença da sessão
 ```
 
-#### Estrutura de Implementação
-1. **Domain Layer**
-   - `internal/domain/entity/user.go` - Entidades UserInfo, Contact, UserPresence
-   - `internal/domain/service/user.go` - Interface UserService
+#### Estrutura de Implementação (Seguindo Regras WAMEX)
+1. **Domain Layer** (`internal/domain/`)
+   - `entity/contact.go` - Entidades ContactInfo, ContactPresence (com tags bun/json)
+   - `service/whatsapp.go` - Extensão da interface SessionService existente
+   - **CONCEITO**: Session = conexão WhatsApp, Contact = outros números
 
-2. **UseCase Layer**
-   - `internal/usecase/user/check_user.go`
-   - `internal/usecase/user/get_user_info.go`
-   - `internal/usecase/user/get_user_avatar.go`
-   - `internal/usecase/user/get_contacts.go`
-   - `internal/usecase/user/set_presence.go`
+2. **UseCase Layer** (`internal/usecase/`)
+   - `contact/check_contact.go` - CheckContactUseCase
+   - `contact/get_contact_info.go` - GetContactInfoUseCase
+   - `contact/get_contact_avatar.go` - GetContactAvatarUseCase
+   - `contact/list_contacts.go` - ListContactsUseCase
+   - `session/set_presence.go` - SetSessionPresenceUseCase
+   - **Nomenclatura**: `{Acao}{Recurso}UseCase`
 
-3. **Infrastructure Layer**
-   - Extensão de `internal/infra/whatsapp/whatsapp_service.go`
-   - Implementação dos métodos UserService
+3. **Infrastructure Layer** (`internal/infra/`)
+   - `whatsapp/whatsapp_service.go` - Extensão com métodos de contato/presença
+   - **IMPORTANTE**: Não criar serviço separado, estender o existente
 
-4. **Transport Layer**
-   - `internal/transport/http/handler/user.go`
-   - Extensão de `internal/transport/http/router/router.go`
+4. **Transport Layer** (`internal/transport/`)
+   - `http/handler/contact.go` - ContactHandler
+   - `http/handler/session.go` - Extensão com método de presença
+   - `http/router/router.go` - Extensão com rotas /contact
+   - **Padrão**: Usar middleware SessionResolver existente
 
 #### Critérios de Aceitação
 - [ ] Todas as rotas respondem corretamente
@@ -281,7 +286,7 @@ graph TD
     end
 ```
 
-### Estrutura de Diretórios - Após Implementação
+### Estrutura de Diretórios - Após Implementação (Seguindo Regras WAMEX)
 
 ```
 internal/
@@ -290,47 +295,43 @@ internal/
 │   │   ├── session.go
 │   │   ├── message.go
 │   │   ├── media.go
-│   │   ├── user.go          # 🆕 Fase 1
-│   │   ├── chat.go          # 🆕 Fase 2
-│   │   ├── group.go         # 🆕 Fase 3
-│   │   └── webhook.go       # 🆕 Fase 4
+│   │   ├── contact.go       # 🆕 Fase 1 (ContactInfo, ContactPresence)
+│   │   ├── chat.go          # 🆕 Fase 2 (ChatAction, MessageDelete)
+│   │   ├── group.go         # 🆕 Fase 3 (GroupInfo, GroupParticipant)
+│   │   └── webhook.go       # 🆕 Fase 4 (WebhookConfig, WebhookEvent)
 │   ├── service/
-│   │   ├── whatsapp.go
-│   │   ├── media.go
-│   │   ├── user.go          # 🆕 Fase 1
-│   │   ├── chat.go          # 🆕 Fase 2
-│   │   ├── group.go         # 🆕 Fase 3
-│   │   └── webhook.go       # 🆕 Fase 4
+│   │   ├── whatsapp.go      # 🔄 Estendido com métodos contact/chat/group
+│   │   └── media.go         # Mantido separado (já existe)
 │   └── repository/
-│       ├── session.go
-│       ├── media.go
-│       └── webhook.go       # 🆕 Fase 4
+│       ├── session.go       # Existente (Session = conexão WhatsApp)
+│       ├── media.go         # Existente
+│       └── webhook.go       # 🆕 Fase 4 (se necessário persistência)
 ├── usecase/
-│   ├── whatsapp/
-│   ├── media/
-│   ├── user/               # 🆕 Fase 1
-│   ├── chat/               # 🆕 Fase 2
-│   ├── group/              # 🆕 Fase 3
-│   └── webhook/            # 🆕 Fase 4
+│   ├── whatsapp/           # Existente (session management)
+│   ├── media/              # Existente (media processing)
+│   ├── contact/            # 🆕 Fase 1 (check_contact.go, get_contact_info.go, etc.)
+│   ├── session/            # 🆕 Fase 1 (set_presence.go - presença da sessão)
+│   ├── chat/               # 🆕 Fase 2 (delete_message.go, mark_read.go, etc.)
+│   ├── group/              # 🆕 Fase 3 (create_group.go, list_groups.go, etc.)
+│   └── webhook/            # 🆕 Fase 4 (manage_webhook.go)
 ├── infra/
 │   ├── whatsapp/
-│   │   ├── whatsapp_service.go
-│   │   ├── user_service.go  # 🆕 Fase 1
-│   │   ├── chat_service.go  # 🆕 Fase 2
-│   │   └── group_service.go # 🆕 Fase 3
-│   └── database/
+│   │   └── whatsapp_service.go  # 🔄 Estendido (não criar arquivos separados)
+│   ├── database/           # Existente
+│   ├── storage/            # Existente
+│   └── config/             # Existente
 └── transport/
     └── http/
         ├── handler/
-        │   ├── session.go
-        │   ├── message.go
-        │   ├── media.go
-        │   ├── user.go      # 🆕 Fase 1
-        │   ├── chat.go      # 🆕 Fase 2
-        │   ├── group.go     # 🆕 Fase 3
-        │   └── webhook.go   # 🆕 Fase 4
+        │   ├── session.go   # 🔄 Estendido com set_presence
+        │   ├── message.go   # Existente
+        │   ├── media.go     # Existente
+        │   ├── contact.go   # 🆕 Fase 1 (check, info, avatar, list)
+        │   ├── chat.go      # 🆕 Fase 2 (delete, markread, presence)
+        │   ├── group.go     # 🆕 Fase 3 (create, list, manage)
+        │   └── webhook.go   # 🆕 Fase 4 (CRUD webhooks)
         └── router/
-            └── router.go
+            └── router.go    # 🔄 Estendido com novas rotas
 ```
 
 ## Especificações Técnicas Detalhadas
@@ -403,20 +404,31 @@ internal/
 
 ### Padrões de Implementação
 
-#### Estrutura de UseCase
+#### Estrutura de UseCase (Seguindo Padrões WAMEX)
 ```go
+// Arquivo: internal/usecase/user/check_user.go
+package user
+
+import (
+    "fmt"
+
+    entity "wamex/internal/domain/entity"
+    domainRepo "wamex/internal/domain/repository"
+    domainService "wamex/internal/domain/service"
+)
+
 type CheckUserUseCase struct {
-    sessionRepo domainRepo.SessionRepository
-    userService domainService.UserService
+    sessionRepo    domainRepo.SessionRepository
+    whatsappService domainService.SessionService  // Usar interface existente
 }
 
 func NewCheckUserUseCase(
     sessionRepo domainRepo.SessionRepository,
-    userService domainService.UserService,
+    whatsappService domainService.SessionService,
 ) *CheckUserUseCase {
     return &CheckUserUseCase{
-        sessionRepo: sessionRepo,
-        userService: userService,
+        sessionRepo:    sessionRepo,
+        whatsappService: whatsappService,
     }
 }
 
@@ -431,8 +443,8 @@ func (uc *CheckUserUseCase) Execute(sessionName, phone string) (*entity.UserInfo
         return nil, fmt.Errorf("session %s is not connected", sessionName)
     }
 
-    // 2. Verificar usuário
-    userInfo, err := uc.userService.CheckUser(sessionName, phone)
+    // 2. Verificar usuário (método estendido na interface SessionService)
+    userInfo, err := uc.whatsappService.CheckUser(sessionName, phone)
     if err != nil {
         return nil, fmt.Errorf("failed to check user: %w", err)
     }
@@ -481,11 +493,11 @@ func (h *UserHandler) CheckUser(w http.ResponseWriter, r *http.Request) {
 
 ## Cronograma Detalhado
 
-### Semana 1: Fase 1 - User Management
-- **Dia 1**: Domain entities e interfaces
-- **Dia 2**: Use cases e testes unitários
-- **Dia 3**: Infrastructure implementation
-- **Dia 4**: Transport layer e integração
+### Semana 1: Fase 1 - Contact & Presence Management
+- **Dia 1**: Domain entities (contact.go) e extensão de interfaces
+- **Dia 2**: Use cases (contact/ e session/set_presence.go)
+- **Dia 3**: Infrastructure (extensão whatsapp_service.go)
+- **Dia 4**: Transport layer (contact.go handler, extensão session.go)
 - **Dia 5**: Testes de integração e documentação
 
 ### Semana 2: Fase 2 - Chat Management
