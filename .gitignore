@@ -4,15 +4,26 @@
 *.dll
 *.so
 *.dylib
-<<<<<<< HEAD
+
+# Go binaries
 zapcore
 main
 
-# Arquivos de teste
+# Test binaries and artifacts
 *.test
 *.out
+coverage.*
+*.coverprofile
+profile.cov
+coverage.txt
+coverage.html
+*.cover
 
-# Dependências
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependencies
 vendor/
 
 # Arquivos de configuração sensíveis
@@ -21,9 +32,10 @@ vendor/
 .env.production
 .env.staging
 
-# Logs
+# Logs e arquivos de logging dual
 *.log
 logs/
+zapcore-*.log
 
 # Arquivos temporários
 *.tmp
@@ -65,11 +77,6 @@ build/
 dist/
 bin/
 
-# Arquivos de coverage
-coverage.txt
-coverage.html
-*.cover
-
 # Arquivos de profiling
 *.prof
 *.pprof
@@ -86,15 +93,3 @@ docs/generated/
 # Arquivos de configuração local
 config.local.yaml
 config.local.json
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Go workspace file
-go.work
-go.work.sum

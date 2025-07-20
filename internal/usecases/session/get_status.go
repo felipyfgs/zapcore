@@ -6,6 +6,7 @@ import (
 
 	"zapcore/internal/domain/session"
 	"zapcore/internal/domain/whatsapp"
+	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -15,15 +16,15 @@ import (
 type GetStatusUseCase struct {
 	sessionRepo    session.Repository
 	whatsappClient whatsapp.Client
-	logger         zerolog.Logger
+	logger         *logger.Logger
 }
 
 // NewGetStatusUseCase cria uma nova instância do caso de uso
-func NewGetStatusUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client, logger zerolog.Logger) *GetStatusUseCase {
+func NewGetStatusUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client, zeroLogger zerolog.Logger) *GetStatusUseCase {
 	return &GetStatusUseCase{
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger,
+		logger:         logger.NewFromZerolog(zeroLogger),
 	}
 }
 

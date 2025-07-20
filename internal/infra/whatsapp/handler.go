@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"zapcore/internal/domain/session"
+	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -15,17 +16,17 @@ type SessionEventHandler struct {
 		UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 		UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
 	}
-	logger zerolog.Logger
+	logger *logger.Logger
 }
 
 // NewSessionEventHandler cria uma nova instância do event handler
 func NewSessionEventHandler(sessionRepo interface {
 	UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 	UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
-}, logger zerolog.Logger) *SessionEventHandler {
+}, zeroLogger zerolog.Logger) *SessionEventHandler {
 	return &SessionEventHandler{
 		sessionRepo: sessionRepo,
-		logger:      logger,
+		logger:      logger.NewFromZerolog(zeroLogger),
 	}
 }
 

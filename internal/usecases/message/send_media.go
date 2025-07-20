@@ -8,6 +8,8 @@ import (
 	"zapcore/internal/domain/message"
 	"zapcore/internal/domain/session"
 	"zapcore/internal/domain/whatsapp"
+	"zapcore/pkg/logger"
+
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -17,7 +19,7 @@ type SendMediaUseCase struct {
 	messageRepo    message.Repository
 	sessionRepo    session.Repository
 	whatsappClient whatsapp.Client
-	logger         zerolog.Logger
+	logger         *logger.Logger
 }
 
 // NewSendMediaUseCase cria uma nova instância do caso de uso
@@ -25,13 +27,13 @@ func NewSendMediaUseCase(
 	messageRepo message.Repository,
 	sessionRepo session.Repository,
 	whatsappClient whatsapp.Client,
-	logger zerolog.Logger,
+	zeroLogger zerolog.Logger,
 ) *SendMediaUseCase {
 	return &SendMediaUseCase{
 		messageRepo:    messageRepo,
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger,
+		logger:         logger.NewFromZerolog(zeroLogger),
 	}
 }
 

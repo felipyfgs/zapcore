@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"zapcore/internal/domain/session"
+	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -24,14 +25,14 @@ type SessionData struct {
 // SessionRepository implementa o repositório de sessões
 type SessionRepository struct {
 	db     *sql.DB
-	logger zerolog.Logger
+	logger *logger.Logger
 }
 
 // NewSessionRepository cria uma nova instância do repositório
-func NewSessionRepository(db *sql.DB, logger zerolog.Logger) *SessionRepository {
+func NewSessionRepository(db *sql.DB, zeroLogger zerolog.Logger) *SessionRepository {
 	return &SessionRepository{
 		db:     db,
-		logger: logger,
+		logger: logger.NewFromZerolog(zeroLogger),
 	}
 }
 

@@ -4,21 +4,23 @@ import (
 	"net/http"
 	"time"
 
+	"zapcore/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
 
 // HealthHandler gerencia as requisições de health check
 type HealthHandler struct {
-	logger    zerolog.Logger
+	logger    *logger.Logger
 	startTime time.Time
 	version   string
 }
 
 // NewHealthHandler cria uma nova instância do handler
-func NewHealthHandler(logger zerolog.Logger, version string) *HealthHandler {
+func NewHealthHandler(zeroLogger zerolog.Logger, version string) *HealthHandler {
 	return &HealthHandler{
-		logger:    logger,
+		logger:    logger.NewFromZerolog(zeroLogger),
 		startTime: time.Now(),
 		version:   version,
 	}

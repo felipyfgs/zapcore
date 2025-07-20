@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"zapcore/internal/usecases/message"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -14,19 +15,19 @@ import (
 type MessageHandler struct {
 	sendTextUseCase  *message.SendTextUseCase
 	sendMediaUseCase *message.SendMediaUseCase
-	logger           zerolog.Logger
+	logger           *logger.Logger
 }
 
 // NewMessageHandler cria uma nova instância do handler
 func NewMessageHandler(
 	sendTextUseCase *message.SendTextUseCase,
 	sendMediaUseCase *message.SendMediaUseCase,
-	logger zerolog.Logger,
+	zeroLogger zerolog.Logger,
 ) *MessageHandler {
 	return &MessageHandler{
 		sendTextUseCase:  sendTextUseCase,
 		sendMediaUseCase: sendMediaUseCase,
-		logger:           logger,
+		logger:           logger.NewFromZerolog(zeroLogger),
 	}
 }
 

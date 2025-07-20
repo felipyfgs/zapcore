@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"zapcore/internal/domain/message"
+	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -16,14 +17,14 @@ import (
 // MessageRepository implementa o repositório de mensagens
 type MessageRepository struct {
 	db     *sql.DB
-	logger zerolog.Logger
+	logger *logger.Logger
 }
 
 // NewMessageRepository cria uma nova instância do repositório
-func NewMessageRepository(db *sql.DB, logger zerolog.Logger) *MessageRepository {
+func NewMessageRepository(db *sql.DB, zeroLogger zerolog.Logger) *MessageRepository {
 	return &MessageRepository{
 		db:     db,
-		logger: logger,
+		logger: logger.NewFromZerolog(zeroLogger),
 	}
 }
 

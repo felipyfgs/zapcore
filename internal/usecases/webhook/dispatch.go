@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"zapcore/internal/domain/webhook"
+	"zapcore/pkg/logger"
+
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -13,28 +15,28 @@ import (
 type DispatchUseCase struct {
 	webhookRepo    webhook.Repository
 	webhookService webhook.Service
-	logger         zerolog.Logger
+	logger         *logger.Logger
 }
 
 // NewDispatchUseCase cria uma nova instância do caso de uso
 func NewDispatchUseCase(
 	webhookRepo webhook.Repository,
 	webhookService webhook.Service,
-	logger zerolog.Logger,
+	zeroLogger zerolog.Logger,
 ) *DispatchUseCase {
 	return &DispatchUseCase{
 		webhookRepo:    webhookRepo,
 		webhookService: webhookService,
-		logger:         logger,
+		logger:         logger.NewFromZerolog(zeroLogger),
 	}
 }
 
 // DispatchRequest representa a requisição para despachar webhook
 type DispatchRequest struct {
-	SessionID uuid.UUID              `json:"session_id" validate:"required"`
-	EventType webhook.EventType      `json:"event_type" validate:"required"`
-	URL       string                 `json:"url" validate:"required,url"`
-	Payload   map[string]any `json:"payload" validate:"required"`
+	SessionID uuid.UUID         `json:"session_id" validate:"required"`
+	EventType webhook.EventType `json:"event_type" validate:"required"`
+	URL       string            `json:"url" validate:"required,url"`
+	Payload   map[string]any    `json:"payload" validate:"required"`
 }
 
 // DispatchResponse representa a resposta do despacho de webhook
@@ -71,14 +73,14 @@ func (uc *DispatchUseCase) Execute(ctx context.Context, req *DispatchRequest) (*
 // ProcessPendingUseCase representa o caso de uso para processar webhooks pendentes
 type ProcessPendingUseCase struct {
 	webhookService webhook.Service
-	logger         zerolog.Logger
+	logger         *logger.Logger
 }
 
 // NewProcessPendingUseCase cria uma nova instância do caso de uso
-func NewProcessPendingUseCase(webhookService webhook.Service, logger zerolog.Logger) *ProcessPendingUseCase {
+func NewProcessPendingUseCase(webhookService webhook.Service, zeroLogger zerolog.Logger) *ProcessPendingUseCase {
 	return &ProcessPendingUseCase{
 		webhookService: webhookService,
-		logger:         logger,
+		logger:         logger.NewFromZerolog(zeroLogger),
 	}
 }
 
@@ -106,14 +108,14 @@ func (uc *ProcessPendingUseCase) Execute(ctx context.Context) (*ProcessPendingRe
 // RetryUseCase representa o caso de uso para reprocessar webhook com falha
 type RetryUseCase struct {
 	webhookService webhook.Service
-	logger         zerolog.Logger
+	logger         *logger.Logger
 }
 
 // NewRetryUseCase cria uma nova instância do caso de uso
-func NewRetryUseCase(webhookService webhook.Service, logger zerolog.Logger) *RetryUseCase {
+func NewRetryUseCase(webhookService webhook.Service, zeroLogger zerolog.Logger) *RetryUseCase {
 	return &RetryUseCase{
 		webhookService: webhookService,
-		logger:         logger,
+		logger:         logger.NewFromZerolog(zeroLogger),
 	}
 }
 
@@ -143,4 +145,3 @@ func (uc *RetryUseCase) Execute(ctx context.Context, req *RetryRequest) (*RetryR
 		Message: "Webhook reprocessado com sucesso",
 	}, nil
 }
-

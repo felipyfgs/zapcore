@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"zapcore/internal/usecases/session"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -22,7 +23,7 @@ type SessionHandler struct {
 	disconnectUseCase *session.DisconnectUseCase
 	listUseCase       *session.ListUseCase
 	getStatusUseCase  *session.GetStatusUseCase
-	logger            zerolog.Logger
+	logger            *logger.Logger
 }
 
 // NewSessionHandler cria uma nova instância do handler
@@ -32,7 +33,7 @@ func NewSessionHandler(
 	disconnectUseCase *session.DisconnectUseCase,
 	listUseCase *session.ListUseCase,
 	getStatusUseCase *session.GetStatusUseCase,
-	logger zerolog.Logger,
+	zeroLogger zerolog.Logger,
 ) *SessionHandler {
 	return &SessionHandler{
 		createUseCase:     createUseCase,
@@ -40,7 +41,7 @@ func NewSessionHandler(
 		disconnectUseCase: disconnectUseCase,
 		listUseCase:       listUseCase,
 		getStatusUseCase:  getStatusUseCase,
-		logger:            logger,
+		logger:            logger.NewFromZerolog(zeroLogger),
 	}
 }
 

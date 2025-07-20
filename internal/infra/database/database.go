@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"zapcore/pkg/logger"
+
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 )
@@ -27,11 +29,11 @@ type Config struct {
 type DB struct {
 	db     *sql.DB
 	config *Config
-	logger zerolog.Logger
+	logger *logger.Logger
 }
 
 // NewDB cria uma nova conexão com o banco de dados
-func NewDB(config *Config, logger zerolog.Logger) (*DB, error) {
+func NewDB(config *Config, zeroLogger zerolog.Logger) (*DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		config.Host,
@@ -66,7 +68,7 @@ func NewDB(config *Config, logger zerolog.Logger) (*DB, error) {
 	return &DB{
 		db:     db,
 		config: config,
-		logger: logger,
+		logger: logger.NewFromZerolog(zeroLogger),
 	}, nil
 }
 
@@ -127,24 +129,24 @@ func (d *DB) GetConfig() *Config {
 }
 
 // GetLogger retorna o logger
-func (d *DB) GetLogger() zerolog.Logger {
+func (d *DB) GetLogger() *logger.Logger {
 	return d.logger
 }
 
 // Health verifica a saúde da conexão
 func (d *DB) Health() map[string]interface{} {
 	stats := d.db.Stats()
-	
+
 	health := map[string]interface{}{
 		"status": "healthy",
 		"stats": map[string]interface{}{
 			"max_open_connections": stats.MaxOpenConnections,
 			"open_connections":     stats.OpenConnections,
-			"in_use":              stats.InUse,
-			"idle":                stats.Idle,
-			"wait_count":          stats.WaitCount,
-			"wait_duration":       stats.WaitDuration.String(),
-			"max_idle_closed":     stats.MaxIdleClosed,
+			"in_use":               stats.InUse,
+			"idle":                 stats.Idle,
+			"wait_count":           stats.WaitCount,
+			"wait_duration":        stats.WaitDuration.String(),
+			"max_idle_closed":      stats.MaxIdleClosed,
 			"max_idle_time_closed": stats.MaxIdleTimeClosed,
 			"max_lifetime_closed":  stats.MaxLifetimeClosed,
 		},

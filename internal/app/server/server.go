@@ -16,24 +16,24 @@ import (
 	"zapcore/internal/infra/repository"
 	"zapcore/internal/infra/whatsapp"
 	"zapcore/internal/usecases/session"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // Server representa o servidor HTTP da aplicação
 type Server struct {
 	config       *config.Config
 	httpServer   *http.Server
-	logger       zerolog.Logger
+	logger       *logger.Logger
 	db           *database.DB
 	storeManager *whatsapp.StoreManager
 }
 
 // New cria uma nova instância do servidor
 func New(cfg *config.Config) (*Server, error) {
-	// Configurar logger
-	logger := setupLogger(cfg)
+	// Usar logger global já inicializado
+	appLogger := logger.Get()
 
 	// Configurar modo do Gin
 	if cfg.IsProduction() {
@@ -55,20 +55,20 @@ func New(cfg *config.Config) (*Server, error) {
 		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
 	}
 
-	db, err := database.NewDB(dbConfig, logger)
+	db, err := database.NewDB(dbConfig, appLogger.GetZerolog())
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar com banco de dados: %w", err)
 	}
 
 	// Inicializar store manager do WhatsApp
-	storeManager, err := whatsapp.NewStoreManager(db.GetDB(), logger)
+	storeManager, err := whatsapp.NewStoreManager(db.GetDB(), appLogger.GetZerolog())
 	if err != nil {
 		return nil, fmt.Errorf("erro ao inicializar store manager do WhatsApp: %w", err)
 	}
 
 	server := &Server{
 		config:       cfg,
-		logger:       logger,
+		logger:       appLogger,
 		db:           db,
 		storeManager: storeManager,
 	}
@@ -88,63 +88,40 @@ func New(cfg *config.Config) (*Server, error) {
 	return server, nil
 }
 
-// setupLogger configura o logger baseado na configuração
-func setupLogger(cfg *config.Config) zerolog.Logger {
-	// Configurar nível de log
-	level, err := zerolog.ParseLevel(cfg.Log.Level)
-	if err != nil {
-		level = zerolog.InfoLevel
-	}
-	zerolog.SetGlobalLevel(level)
 
-	// Configurar formato
-	var logger zerolog.Logger
-	if cfg.Log.Format == "console" || cfg.IsDevelopment() {
-		// Formato console para desenvolvimento
-		logger = zerolog.New(zerolog.ConsoleWriter{
-			Out:        os.Stdout,
-			TimeFormat: time.RFC3339,
-		}).With().Timestamp().Logger()
-	} else {
-		// Formato JSON para produção
-		logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
-	}
-
-	return logger
-}
 
 // setupRoutes configura todas as rotas da aplicação
 func (s *Server) setupRoutes() *gin.Engine {
 	// Criar repositórios
-	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger)
+	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger.GetZerolog())
 
 	// Criar event handler para WhatsApp
-	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger)
+	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger.GetZerolog())
 
 	// Criar cliente WhatsApp
-	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger, eventHandler)
+	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger.GetZerolog(), eventHandler)
 
 	// Criar use cases
-	createUseCase := session.NewCreateUseCase(sessionRepo, s.logger)
-	connectUseCase := session.NewConnectUseCase(sessionRepo, whatsappClient, s.logger)
-	disconnectUseCase := session.NewDisconnectUseCase(sessionRepo, whatsappClient, s.logger)
-	listUseCase := session.NewListUseCase(sessionRepo, s.logger)
-	getStatusUseCase := session.NewGetStatusUseCase(sessionRepo, whatsappClient, s.logger)
+	createUseCase := session.NewCreateUseCase(sessionRepo, s.logger.GetZerolog())
+	connectUseCase := session.NewConnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
+	disconnectUseCase := session.NewDisconnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
+	listUseCase := session.NewListUseCase(sessionRepo, s.logger.GetZerolog())
+	getStatusUseCase := session.NewGetStatusUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
 
 	// Criar handlers
-	healthHandler := handlers.NewHealthHandler(s.logger, "1.0.0")
+	healthHandler := handlers.NewHealthHandler(s.logger.GetZerolog(), "1.0.0")
 	sessionHandler := handlers.NewSessionHandler(
 		createUseCase,
 		connectUseCase,
 		disconnectUseCase,
 		listUseCase,
 		getStatusUseCase,
-		s.logger,
+		s.logger.GetZerolog(),
 	)
 
 	// Configurar router
 	routerConfig := router.Config{
-		Logger:          s.logger,
+		Logger:          s.logger.GetZerolog(),
 		APIKey:          s.config.Auth.APIKey,
 		RateLimitReqs:   s.config.RateLimit.Requests,
 		RateLimitWindow: s.config.RateLimit.Window.String(),
@@ -260,7 +237,7 @@ func (s *Server) GetConfig() *config.Config {
 }
 
 // GetLogger retorna o logger do servidor
-func (s *Server) GetLogger() zerolog.Logger {
+func (s *Server) GetLogger() *logger.Logger {
 	return s.logger
 }
 
@@ -272,9 +249,9 @@ func (s *Server) GetDB() *database.DB {
 // connectActiveSessionsOnStartup reconecta sessões ativas automaticamente
 func (s *Server) connectActiveSessionsOnStartup() error {
 	// Criar repositórios e cliente WhatsApp
-	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger)
-	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger)
-	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger, eventHandler)
+	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger.GetZerolog())
+	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger.GetZerolog())
+	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger.GetZerolog(), eventHandler)
 
 	// Chamar ConnectOnStartup
 	ctx := context.Background()

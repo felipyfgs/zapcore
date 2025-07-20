@@ -43,8 +43,12 @@ type DatabaseConfig struct {
 
 // LogConfig configurações de logging
 type LogConfig struct {
-	Level  string
-	Format string
+	Level         string
+	Format        string
+	DualOutput    bool
+	ConsoleFormat string
+	FileFormat    string
+	FilePath      string
 }
 
 // AuthConfig configurações de autenticação
@@ -102,13 +106,8 @@ func Load() (*Config, error) {
 
 	// Tentar ler arquivo de configuração
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Printf("Aviso: arquivo .env não encontrado: %v\n", err)
-	} else {
-		fmt.Printf("Arquivo .env carregado com sucesso\n")
+		// Arquivo .env não encontrado - usar apenas variáveis de ambiente
 	}
-
-	// Debug: mostrar valor da API_KEY após carregar tudo
-	fmt.Printf("API_KEY final: %s\n", viper.GetString("API_KEY"))
 
 	config := &Config{}
 
@@ -134,8 +133,12 @@ func Load() (*Config, error) {
 
 	// Configurações de log
 	config.Log = LogConfig{
-		Level:  viper.GetString("LOG_LEVEL"),
-		Format: viper.GetString("LOG_FORMAT"),
+		Level:         viper.GetString("LOG_LEVEL"),
+		Format:        viper.GetString("LOG_FORMAT"),
+		DualOutput:    viper.GetBool("LOG_DUAL_OUTPUT"),
+		ConsoleFormat: viper.GetString("LOG_CONSOLE_FORMAT"),
+		FileFormat:    viper.GetString("LOG_FILE_FORMAT"),
+		FilePath:      viper.GetString("LOG_FILE_PATH"),
 	}
 
 	// Configurações de autenticação
@@ -203,6 +206,10 @@ func setDefaults() {
 	// Log
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
+	viper.SetDefault("LOG_DUAL_OUTPUT", false)
+	viper.SetDefault("LOG_CONSOLE_FORMAT", "console")
+	viper.SetDefault("LOG_FILE_FORMAT", "json")
+	viper.SetDefault("LOG_FILE_PATH", "./logs/zapcore.log")
 
 	// Autenticação (sem valor padrão para forçar configuração)
 	// viper.SetDefault("API_KEY", "your-api-key-for-authentication")

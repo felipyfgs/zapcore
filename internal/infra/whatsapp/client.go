@@ -14,6 +14,7 @@ import (
 	"zapcore/internal/domain/session"
 	"zapcore/internal/domain/whatsapp"
 	"zapcore/internal/infra/repository"
+	"zapcore/pkg/logger"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
@@ -47,7 +48,7 @@ type WhatsAppClient struct {
 		UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 		UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
 	}
-	logger          zerolog.Logger
+	logger          *logger.Logger
 	eventHandler    EventHandler
 }
 
@@ -71,7 +72,7 @@ func NewWhatsAppClient(dbContainer *sqlstore.Container, sessionRepo interface{
 	GetActiveSessions(ctx context.Context) ([]*repository.SessionData, error)
 	UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 	UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
-}, logger zerolog.Logger, eventHandler EventHandler) *WhatsAppClient {
+}, zeroLogger zerolog.Logger, eventHandler EventHandler) *WhatsAppClient {
 	return &WhatsAppClient{
 		container:    dbContainer,
 		clients:      make(map[uuid.UUID]*whatsmeow.Client),
@@ -79,7 +80,7 @@ func NewWhatsAppClient(dbContainer *sqlstore.Container, sessionRepo interface{
 		qrChannels:   make(map[uuid.UUID]<-chan whatsmeow.QRChannelItem),
 		killChannels: make(map[uuid.UUID]chan bool),
 		sessionRepo:  sessionRepo,
-		logger:       logger,
+		logger:       logger.NewFromZerolog(zeroLogger),
 		eventHandler: eventHandler,
 	}
 }
@@ -365,10 +366,16 @@ func (c *WhatsAppClient) processQREvents(sessionID uuid.UUID, qrChan <-chan what
 			c.logger.Info().Str("session_id", sessionID.String()).Msg("QR Code gerado")
 
 			// Exibir QR code no terminal (como no wuzapi)
-			fmt.Printf("\n=== QR CODE PARA SESSÃO %s ===\n", sessionID.String())
+			c.logger.Info().
+				Str("session_id", sessionID.String()).
+				Str("qr_code", evt.Code).
+				Msg("=== QR CODE GERADO ===")
+
 			qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-			fmt.Printf("QR Code: %s\n", evt.Code)
-			fmt.Printf("=== Escaneie o código acima com seu WhatsApp ===\n\n")
+
+			c.logger.Info().
+				Str("session_id", sessionID.String()).
+				Msg("=== Escaneie o código acima com seu WhatsApp ===")
 
 			// Gerar QR code em base64 para armazenar
 			image, err := qrcode.Encode(evt.Code, qrcode.Medium, 256)
@@ -386,8 +393,9 @@ func (c *WhatsAppClient) processQREvents(sessionID uuid.UUID, qrChan <-chan what
 			}
 
 		case "timeout":
-			c.logger.Warn().Str("session_id", sessionID.String()).Msg("QR Code expirou")
-			fmt.Printf("\n⏰ QR Code expirou para sessão %s. Tente conectar novamente.\n\n", sessionID.String())
+			c.logger.Warn().
+				Str("session_id", sessionID.String()).
+				Msg("⏰ QR Code expirou - Tente conectar novamente")
 
 			// Limpar cliente
 			c.clientsMutex.Lock()
@@ -409,8 +417,9 @@ func (c *WhatsAppClient) processQREvents(sessionID uuid.UUID, qrChan <-chan what
 			return
 
 		case "success":
-			c.logger.Info().Str("session_id", sessionID.String()).Msg("QR Code escaneado com sucesso")
-			fmt.Printf("\n✅ QR Code escaneado com sucesso para sessão %s!\n\n", sessionID.String())
+			c.logger.Info().
+				Str("session_id", sessionID.String()).
+				Msg("✅ QR Code escaneado com sucesso")
 
 			// QR foi escaneado, sair do loop
 			return
@@ -824,10 +833,12 @@ func (c *WhatsAppClient) handleWhatsAppEvent(sessionID uuid.UUID, evt interface{
 			Str("platform", e.Platform).
 			Msg("Pareamento QR realizado com sucesso")
 
-		fmt.Printf("\n🎉 Pareamento realizado com sucesso!\n")
-		fmt.Printf("JID: %s\n", e.ID.String())
-		fmt.Printf("Nome do negócio: %s\n", e.BusinessName)
-		fmt.Printf("Plataforma: %s\n\n", e.Platform)
+		c.logger.Info().
+			Str("session_id", sessionID.String()).
+			Str("jid", e.ID.String()).
+			Str("business_name", e.BusinessName).
+			Str("platform", e.Platform).
+			Msg("🎉 Pareamento realizado com sucesso")
 
 		// Salvar JID no banco de dados para reconexão futura
 		if c.eventHandler != nil {
