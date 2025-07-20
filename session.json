@@ -1,0 +1,4 @@
+{
+  "name": "Minha Primeira Sessao",
+  "webhook": "http://localhost:8080/webhook"
+}

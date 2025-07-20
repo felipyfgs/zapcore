@@ -1,168 +1,125 @@
-# WAMEX - WhatsApp Message Exchange System
+# ZapCore - WhatsApp API
 
-A robust WhatsApp messaging system built with Go, featuring Clean Architecture and multi-source media support.
+API REST para integração com WhatsApp usando Clean Architecture em Go.
 
-## Features
+## 🚀 Funcionalidades
 
-### Core Functionality
-- **WhatsApp Session Management** with QR code authentication
-- **Multi-format Messaging** (text, image, audio, document)
-- **Multi-source Media Support** (Base64, URL, MinIO, Upload)
-- **Clean Architecture** with domain-driven design
-- **RESTful API** with OpenAPI 3.0 documentation
-- **PostgreSQL + MinIO** integration
+### Gerenciamento de Sessões
+- ✅ Criar nova sessão
+- ✅ Listar sessões ativas
+- ✅ Conectar/desconectar sessão
+- ✅ Obter status da sessão
+- ✅ Gerar QR Code para autenticação
+- ✅ Emparelhar telefone
+- ✅ Configurar proxy
 
-### Architecture
-- **Domain Layer**: Entities and business interfaces
-- **Use Case Layer**: Business logic orchestration
-- **Infrastructure Layer**: Database, storage, WhatsApp client
-- **Transport Layer**: HTTP handlers and middleware
+### Envio de Mensagens
+- ✅ Mensagens de texto
+- ✅ Imagens, áudios, vídeos
+- ✅ Documentos e stickers
+- ✅ Localização e contatos
+- ✅ Botões interativos
+- ✅ Listas interativas
+- ✅ Enquetes
+- ✅ Edição de mensagens
 
-## Tech Stack
+## 🏗️ Arquitetura
 
-- **Go 1.24.4** with idiomatic project structure
-- **Chi router** for HTTP routing
-- **whatsmeow** for WhatsApp Web API
-- **Bun ORM** for database operations
-- **PostgreSQL** for data persistence
-- **MinIO** for object storage
-- **Docker Compose** for development environment
+Projeto estruturado seguindo **Clean Architecture**:
 
-## Quick Start
-
-### Prerequisites
-- Go 1.24.4+
-- Docker & Docker Compose
-- PostgreSQL
-- MinIO
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/felipyfgs/wamex.git
-cd wamex
+```
+├── internal/
+│   ├── domain/          # Entidades e regras de negócio
+│   ├── usecases/        # Casos de uso
+│   ├── infra/           # Implementações externas
+│   ├── interfaces/      # Controllers HTTP
+│   └── app/             # Configuração da aplicação
+└── pkg/                 # Bibliotecas públicas
 ```
 
-2. **Start services**
+## 🛠️ Tecnologias
+
+- **Go 1.21+**
+- **Gin** - Framework HTTP
+- **PostgreSQL** - Banco de dados
+- **WhatsApp Web Multi-Device** - Protocolo WhatsApp
+- **Docker** - Containerização
+
+## 📋 Pré-requisitos
+
+- Go 1.21+
+- PostgreSQL 13+
+- Docker (opcional)
+
+## 🚀 Instalação
+
+1. Clone o repositório:
 ```bash
+git clone https://github.com/felipe/zapcore.git
+cd zapcore
+```
+
+2. Configure as variáveis de ambiente:
+```bash
+cp .env.example .env
+# Edite o arquivo .env com suas configurações
+```
+
+3. Execute as migrações do banco:
+```bash
+go run cmd/migrate/main.go up
+```
+
+4. Inicie a aplicação:
+```bash
+go run cmd/server/main.go
+```
+
+## 📚 Documentação da API
+
+### Sessões
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/sessions/add` | Criar nova sessão |
+| GET | `/sessions/list` | Listar sessões |
+| GET | `/sessions/{id}` | Obter sessão |
+| DELETE | `/sessions/{id}` | Remover sessão |
+| POST | `/sessions/{id}/connect` | Conectar sessão |
+| POST | `/sessions/{id}/logout` | Desconectar sessão |
+| GET | `/sessions/{id}/status` | Status da sessão |
+| GET | `/sessions/{id}/qr` | Gerar QR Code |
+
+### Mensagens
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/messages/{sessionID}/send/text` | Enviar texto |
+| POST | `/messages/{sessionID}/send/image` | Enviar imagem |
+| POST | `/messages/{sessionID}/send/audio` | Enviar áudio |
+| POST | `/messages/{sessionID}/send/video` | Enviar vídeo |
+| POST | `/messages/{sessionID}/send/document` | Enviar documento |
+
+## 🐳 Docker
+
+```bash
+# Build da imagem
+docker build -t zapcore .
+
+# Executar com docker-compose
 docker-compose up -d
 ```
 
-3. **Build and run**
+## 🧪 Testes
+
 ```bash
-go build -o wamex cmd/wamex/main.go
-./wamex
-```
-
-4. **Access API documentation**
-- OpenAPI: http://localhost:8080/docs
-- Health check: http://localhost:8080/health
-
-## API Usage
-
-### Authentication
-1. **Get QR Code**
-```bash
-GET /api/v1/whatsapp/qr
-```
-
-2. **Check Session Status**
-```bash
-GET /api/v1/whatsapp/status
-```
-
-### Messaging
-1. **Send Text Message**
-```bash
-POST /api/v1/messages/text
-{
-  "phone": "5511999999999",
-  "message": "Hello World!"
-}
-```
-
-2. **Send Media Message**
-```bash
-POST /api/v1/messages/media
-{
-  "phone": "5511999999999",
-  "media_type": "image",
-  "media_source": "base64",
-  "media_data": "data:image/jpeg;base64,..."
-}
-```
-
-## Project Structure
-
-```
-wamex/
-├── cmd/wamex/              # Application entry point
-├── internal/
-│   ├── domain/             # Business entities and interfaces
-│   ├── usecase/            # Business logic orchestration
-│   ├── infra/              # Infrastructure implementations
-│   └── transport/          # HTTP handlers and middleware
-├── pkg/                    # Reusable packages
-├── api/                    # API documentation
-├── docs/                   # Project documentation
-├── test/                   # Test files
-└── docker-compose.yml      # Development environment
-```
-
-## Configuration
-
-Environment variables:
-```bash
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=wamex
-DB_USER=postgres
-DB_PASSWORD=postgres
-
-# MinIO
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-
-# Server
-SERVER_PORT=8080
-```
-
-## Development
-
-### Running Tests
-```bash
+# Executar todos os testes
 go test ./...
+
+# Executar testes com coverage
+go test -cover ./...
 ```
 
-### Building for Production
-```bash
-go build -ldflags="-s -w" -o wamex cmd/wamex/main.go
-```
+## 📄 Licença
 
-### Docker Build
-```bash
-docker build -t wamex:latest .
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-For support, please open an issue on GitHub or contact the maintainers.
-
----
-
-**WAMEX v0.0.1** - Foundation release with all core functionality implemented and tested.
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.

@@ -3,55 +3,82 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: wamex-postgres
-    restart: unless-stopped
+    container_name: zapcore_postgres
     environment:
-      POSTGRES_DB: ${DB_NAME:-wamex}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: zapcore
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./internal/infra/database/migrations:/docker-entrypoint-initdb.d
     networks:
-      - wamex-network
+      - zapcore_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-wamex}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zapcore"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  minio:
-    image: minio/minio:RELEASE.2025-03-12T18-04-18Z-cpuv1
-    container_name: wamex-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-wamex}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-wamex123456}
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
-      MINIO_SERVER_URL: http://localhost:9000
+  redis:
+    image: redis:7-alpine
+    container_name: zapcore_redis
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "6379:6379"
     volumes:
-      - minio_data:/data
+      - redis_data:/data
     networks:
-      - wamex-network
+      - zapcore_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-      start_period: 30s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# Aplicação rodará localmente
+  # zapcore:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: zapcore_app
+  #   environment:
+  #     - DB_HOST=postgres
+  #     - DB_PORT=5432
+  #     - DB_NAME=postgres
+  #     - DB_USER=zapcore
+  #     - DB_PASSWORD=postgres
+  #     - DB_SSLMODE=disable
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - PORT=8080
+  #     - HOST=0.0.0.0
+  #     - LOG_LEVEL=info
+  #     - API_KEY=zapcore-api-key-development-only
+  #     - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+  #     - ENV=development
+  #     - WHATSAPP_WEBHOOK_URL=http://localhost:8080/webhook
+  #     - WHATSAPP_MEDIA_PATH=./uploads
+  #     - WHATSAPP_SESSION_PATH=./sessions
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - zapcore_network
+  #   volumes:
+  #     - ./logs:/app/logs
+  #     - ./uploads:/app/uploads
+  #   restart: unless-stopped
 
 volumes:
   postgres_data:
-    driver: local
-  minio_data:
-    driver: local
+  redis_data:
 
 networks:
-  wamex-network:
+  zapcore_network:
     driver: bridge

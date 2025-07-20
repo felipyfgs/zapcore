@@ -1,19 +1,17 @@
-# Binários Go
+# Binários
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-server
-server.exe
-wamex
-wamex.exe
+zapcore
+main
 
-# Arquivos de teste Go
+# Arquivos de teste
 *.test
 *.out
 
-# Dependências Go
+# Dependências
 vendor/
 
 # Arquivos de configuração sensíveis
@@ -25,59 +23,34 @@ vendor/
 # Logs
 *.log
 logs/
-log/
-
-# Banco de dados local
-*.db
-*.sqlite
-*.sqlite3
-dbdata/
 
 # Arquivos temporários
-tmp/
-temp/
 *.tmp
 *.temp
+tmp/
+temp/
 
-# Arquivos de sessão WhatsApp
+# Arquivos de sessão do WhatsApp
 sessions/
-session_data/
 *.session
+*.db
 
-# Arquivos de mídia/uploads
-uploads/
-files/
+# Arquivos de mídia
 media/
+uploads/
 
-# Cache
-*.cache
-cache/
+# Arquivos de backup
+*.bak
+*.backup
 
-# IDEs e Editores
+# Arquivos do IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
-Thumbs.db
 
-# Certificados e chaves
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-
-# Docker volumes
-postgres_data/
-pgadmin_data/
-
-# Backup files
-*.bak
-*.backup
-
-# OS específicos
+# Arquivos do sistema operacional
 .DS_Store
 .DS_Store?
 ._*
@@ -87,129 +60,28 @@ ehthumbs.db
 Thumbs.db
 
 # Arquivos de build
-dist/
 build/
-out/
+dist/
+bin/
 
-# Coverage reports
-*.cover
+# Arquivos de coverage
 coverage.txt
 coverage.html
+*.cover
 
-# Profiling
+# Arquivos de profiling
 *.prof
 *.pprof
 
-# Air (live reload)
-.air.toml
-tmp/
+# Arquivos de documentação gerados
+docs/generated/
 
-# Delve debugger
-__debug_bin
-
-# GoLand
-.idea/
-
-# VS Code
-.vscode/
-
-# Vim
-*.swp
-*.swo
-
-# Emacs
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
-*.elc
-auto-save-list
-tramp
-.\#*
-
-# Arquivos específicos do projeto
-referencia/
-docs/private/
-scripts/private/
-
-# Arquivos de migração (após conclusão)
-migration-backup/
-migration-*.md
-*-backup/
-*.backup.go
-
-# Arquivos do Augment (ferramenta de desenvolvimento)
-.augment/
-*.augment
-.augment-*
-
-# Arquivos de desenvolvimento e ferramentas
-.devcontainer/
-.codespaces/
-.replit
-.replit.nix
-
-# Arquivos de análise e profiling
-*.trace
-*.mem
-*.cpu
-*.block
-*.mutex
-
-# Arquivos de documentação temporária
-docs/temp/
-docs/draft/
-*.draft.md
-*.temp.md
-
-# Arquivos de configuração de desenvolvimento
-.air.conf
-.realize.yaml
-.fresh.conf
-
-# Arquivos de teste específicos
-test_data/
-testdata/
-fixtures/
-mocks/
-
-# Arquivos de assets grandes (usar Git LFS se necessário)
-assets/*.mp4
-assets/*.avi
-assets/*.mov
-assets/*.mkv
-assets/*.webm
-assets/large/
-
-# Arquivos de backup automático
-*.orig
-*.rej
-*~
-.#*
-#*#
-
-# Node modules (se houver frontend)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Arquivos de certificados
+*.pem
+*.key
+*.crt
+*.p12
 
 # Arquivos de configuração local
 config.local.yaml
 config.local.json
-
-# Binários específicos do projeto
-wamex-*
-*-clean.exe
-
-# Arquivos de teste temporários
-test-*.json
-test-*.yaml
-*.test.json
-
-# Arquivos de teste na raiz do projeto
-/test-*
-/teste-*
-/*.test.*
-/relatorio-*.md
-/limpeza-*.md
