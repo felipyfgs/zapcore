@@ -84,8 +84,8 @@ func (uc *ConnectUseCase) Execute(ctx context.Context, req *ConnectRequest) (*Co
 	// Tentar conectar com WhatsApp
 	err = uc.whatsappClient.Connect(ctx, req.SessionID)
 	if err != nil {
-		// Atualizar status para error
-		sess.UpdateStatus(session.WhatsAppStatusError)
+		// Atualizar status para disconnected em caso de erro
+		sess.UpdateStatus(session.WhatsAppStatusDisconnected)
 		uc.sessionRepo.Update(ctx, sess)
 
 		uc.logger.Error().Err(err).Str("session_id", req.SessionID.String()).Msg("Erro ao conectar com WhatsApp")
@@ -105,22 +105,8 @@ func (uc *ConnectUseCase) Execute(ctx context.Context, req *ConnectRequest) (*Co
 		Message:   "Conexão iniciada com sucesso",
 	}
 
-	// Se precisar de QR Code, gerar
-	if status == whatsapp.StatusQRCode {
-		qrCode, err := uc.whatsappClient.GetQRCode(ctx, req.SessionID)
-		if err != nil {
-			uc.logger.Error().Err(err).Msg("Erro ao gerar QR Code")
-			return nil, fmt.Errorf("erro ao gerar QR Code: %w", err)
-		}
-
-		response.QRCode = qrCode
-		response.Message = "QR Code gerado. Escaneie com seu WhatsApp"
-
-		// Atualizar sessão com QR Code
-		sess.SetQRCode(qrCode)
-		sess.UpdateStatus(session.WhatsAppStatusQRCode)
-		uc.sessionRepo.Update(ctx, sess)
-	}
+	// QR Code será exibido no terminal do servidor automaticamente
+	// quando necessário durante o processo de conexão
 
 	uc.logger.Info().
 		Str("session_id", req.SessionID.String()).

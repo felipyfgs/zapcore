@@ -134,7 +134,7 @@ func (r *Router) setupSessionRoutes(group *gin.RouterGroup) {
 		sessions.GET("/:sessionID", r.sessionHandler.GetStatus)
 		// sessions.DELETE("/:sessionID", r.sessionHandler.Delete) // TODO: Implementar
 
-		// Controle de conexão
+		// Controle de conexão (aceita UUID ou nome da sessão)
 		sessions.POST("/:sessionID/connect", r.sessionHandler.Connect)
 		sessions.POST("/:sessionID/logout", r.sessionHandler.Disconnect)
 		sessions.GET("/:sessionID/status", r.sessionHandler.GetStatus)

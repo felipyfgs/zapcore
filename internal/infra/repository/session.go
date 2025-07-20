@@ -14,6 +14,13 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// SessionData representa os dados básicos de uma sessão para reconexão
+type SessionData struct {
+	ID   uuid.UUID
+	Name string
+	JID  string
+}
+
 // SessionRepository implementa o repositório de sessões
 type SessionRepository struct {
 	db     *sql.DB
@@ -235,10 +242,14 @@ func (r *SessionRepository) GetActiveCount(ctx context.Context) (int, error) {
 }
 
 // UpdateStatus atualiza apenas o status de uma sessão
-func (r *SessionRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status session.WhatsAppSessionStatus) error {
-	query := "UPDATE sessions SET status = $2, updated_at = $3 WHERE id = $1"
+func (r *SessionRepository) UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error {
+	query := `
+		UPDATE zapcore_sessions
+		SET status = $2, updated_at = $3
+		WHERE id = $1
+	`
 
-	result, err := r.db.ExecContext(ctx, query, id, status, time.Now())
+	result, err := r.db.ExecContext(ctx, query, sessionID, status, time.Now())
 	if err != nil {
 		return fmt.Errorf("erro ao atualizar status da sessão: %w", err)
 	}
@@ -251,6 +262,11 @@ func (r *SessionRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 	if rowsAffected == 0 {
 		return session.ErrSessionNotFound
 	}
+
+	r.logger.Info().
+		Str("session_id", sessionID.String()).
+		Str("status", string(status)).
+		Msg("Status da sessão atualizado com sucesso")
 
 	return nil
 }
@@ -301,6 +317,68 @@ func (r *SessionRepository) GetConnectedSessions(ctx context.Context) ([]*sessio
 	}
 
 	return sessions, nil
+}
+
+// GetActiveSessions retorna todas as sessões ativas com JID para reconexão
+func (r *SessionRepository) GetActiveSessions(ctx context.Context) ([]*SessionData, error) {
+	query := `
+		SELECT id, name, jid
+		FROM zapcore_sessions
+		WHERE is_active = true AND jid IS NOT NULL AND jid != ''
+		ORDER BY created_at ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao buscar sessões ativas: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*SessionData
+	for rows.Next() {
+		var sess SessionData
+		err := rows.Scan(&sess.ID, &sess.Name, &sess.JID)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao escanear sessão ativa: %w", err)
+		}
+		sessions = append(sessions, &sess)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("erro ao iterar sessões ativas: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// UpdateJID atualiza o JID de uma sessão após pareamento bem-sucedido
+func (r *SessionRepository) UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error {
+	query := `
+		UPDATE zapcore_sessions
+		SET jid = $2, updated_at = $3
+		WHERE id = $1
+	`
+
+	result, err := r.db.ExecContext(ctx, query, sessionID, jid, time.Now())
+	if err != nil {
+		return fmt.Errorf("erro ao atualizar JID da sessão: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return session.ErrSessionNotFound
+	}
+
+	r.logger.Info().
+		Str("session_id", sessionID.String()).
+		Str("jid", jid).
+		Msg("JID da sessão atualizado com sucesso")
+
+	return nil
 }
 
 // scanSession converte uma linha do banco em uma sessão

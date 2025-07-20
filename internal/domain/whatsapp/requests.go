@@ -349,7 +349,6 @@ const (
 	StatusDisconnected ConnectionStatus = "disconnected"
 	StatusConnecting   ConnectionStatus = "connecting"
 	StatusConnected    ConnectionStatus = "connected"
-	StatusQRCode       ConnectionStatus = "qr_code"
 	StatusLoggedOut    ConnectionStatus = "logged_out"
 )
 

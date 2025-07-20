@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 
 	"zapcore/internal/usecases/session"
 
@@ -9,6 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
+
+// Regex para validação de nomes de sessão
+var sessionNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // SessionHandler gerencia as requisições HTTP para sessões
 type SessionHandler struct {
@@ -39,6 +44,43 @@ func NewSessionHandler(
 	}
 }
 
+// validateSessionName valida se o nome da sessão atende aos critérios
+func (h *SessionHandler) validateSessionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("nome da sessão é obrigatório")
+	}
+
+	if len(name) < 3 {
+		return fmt.Errorf("nome da sessão deve ter pelo menos 3 caracteres")
+	}
+
+	if len(name) > 50 {
+		return fmt.Errorf("nome da sessão deve ter no máximo 50 caracteres")
+	}
+
+	if !sessionNameRegex.MatchString(name) {
+		return fmt.Errorf("nome da sessão deve conter apenas letras (a-z, A-Z), números (0-9), hífens (-) e underscores (_). Não são permitidos espaços, acentos ou caracteres especiais")
+	}
+
+	return nil
+}
+
+// resolveSessionIdentifier resolve um identificador que pode ser UUID ou nome da sessão
+func (h *SessionHandler) resolveSessionIdentifier(c *gin.Context, identifier string) (uuid.UUID, error) {
+	// Primeiro, tenta interpretar como UUID
+	if sessionID, err := uuid.Parse(identifier); err == nil {
+		return sessionID, nil
+	}
+
+	// Se não for UUID, busca por nome da sessão
+	sess, err := h.getStatusUseCase.GetByName(c.Request.Context(), identifier)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("sessão não encontrada com identificador '%s'", identifier)
+	}
+
+	return sess.ID, nil
+}
+
 // Create cria uma nova sessão
 // @Summary Criar nova sessão
 // @Description Cria uma nova sessão do WhatsApp
@@ -57,6 +99,16 @@ func (h *SessionHandler) Create(c *gin.Context) {
 		h.logger.Error().Err(err).Msg("Erro ao fazer bind da requisição")
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Dados inválidos",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Validar nome da sessão
+	if err := h.validateSessionName(req.Name); err != nil {
+		h.logger.Error().Err(err).Str("session_name", req.Name).Msg("Nome da sessão inválido")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Nome da sessão inválido",
 			Message: err.Error(),
 		})
 		return
@@ -110,19 +162,19 @@ func (h *SessionHandler) List(c *gin.Context) {
 // @Tags sessions
 // @Accept json
 // @Produce json
-// @Param sessionID path string true "ID da sessão"
+// @Param sessionID path string true "ID ou nome da sessão"
 // @Success 200 {object} session.GetStatusResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /sessions/{sessionID} [get]
 func (h *SessionHandler) GetStatus(c *gin.Context) {
-	sessionIDStr := c.Param("sessionID")
-	sessionID, err := uuid.Parse(sessionIDStr)
+	identifier := c.Param("sessionID")
+	sessionID, err := h.resolveSessionIdentifier(c, identifier)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "ID da sessão inválido",
-			Message: "O ID da sessão deve ser um UUID válido",
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Sessão não encontrada",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -146,19 +198,19 @@ func (h *SessionHandler) GetStatus(c *gin.Context) {
 // @Tags sessions
 // @Accept json
 // @Produce json
-// @Param sessionID path string true "ID da sessão"
+// @Param sessionID path string true "ID ou nome da sessão"
 // @Success 200 {object} session.ConnectResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /sessions/{sessionID}/connect [post]
 func (h *SessionHandler) Connect(c *gin.Context) {
-	sessionIDStr := c.Param("sessionID")
-	sessionID, err := uuid.Parse(sessionIDStr)
+	identifier := c.Param("sessionID")
+	sessionID, err := h.resolveSessionIdentifier(c, identifier)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "ID da sessão inválido",
-			Message: "O ID da sessão deve ser um UUID válido",
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Sessão não encontrada",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -182,19 +234,19 @@ func (h *SessionHandler) Connect(c *gin.Context) {
 // @Tags sessions
 // @Accept json
 // @Produce json
-// @Param sessionID path string true "ID da sessão"
+// @Param sessionID path string true "ID ou nome da sessão"
 // @Success 200 {object} session.DisconnectResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /sessions/{sessionID}/logout [post]
 func (h *SessionHandler) Disconnect(c *gin.Context) {
-	sessionIDStr := c.Param("sessionID")
-	sessionID, err := uuid.Parse(sessionIDStr)
+	identifier := c.Param("sessionID")
+	sessionID, err := h.resolveSessionIdentifier(c, identifier)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "ID da sessão inválido",
-			Message: "O ID da sessão deve ser um UUID válido",
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Sessão não encontrada",
+			Message: err.Error(),
 		})
 		return
 	}

@@ -99,3 +99,17 @@ func (uc *GetStatusUseCase) Execute(ctx context.Context, req *GetStatusRequest) 
 
 	return response, nil
 }
+
+// GetByName busca uma sessão pelo nome
+func (uc *GetStatusUseCase) GetByName(ctx context.Context, name string) (*session.Session, error) {
+	sess, err := uc.sessionRepo.GetByName(ctx, name)
+	if err != nil {
+		if err == session.ErrSessionNotFound {
+			return nil, err
+		}
+		uc.logger.Error().Err(err).Str("session_name", name).Msg("Erro ao buscar sessão por nome")
+		return nil, fmt.Errorf("erro interno do servidor")
+	}
+
+	return sess, nil
+}

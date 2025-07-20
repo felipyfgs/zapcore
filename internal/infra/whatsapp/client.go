@@ -6,14 +6,18 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"zapcore/internal/domain/session"
 	"zapcore/internal/domain/whatsapp"
+	"zapcore/internal/infra/repository"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
+	"github.com/mdp/qrterminal/v3"
 	"github.com/rs/zerolog"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
@@ -29,13 +33,32 @@ import (
 
 // WhatsAppClient implementa a interface whatsapp.Client
 type WhatsAppClient struct {
-	container    *sqlstore.Container
-	clients      map[uuid.UUID]*whatsmeow.Client
-	clientsMutex sync.RWMutex
-	httpClients  map[uuid.UUID]*resty.Client
-	httpMutex    sync.RWMutex
-	logger       zerolog.Logger
-	eventHandler EventHandler
+	container       *sqlstore.Container
+	clients         map[uuid.UUID]*whatsmeow.Client
+	clientsMutex    sync.RWMutex
+	httpClients     map[uuid.UUID]*resty.Client
+	httpMutex       sync.RWMutex
+	qrChannels      map[uuid.UUID]<-chan whatsmeow.QRChannelItem
+	qrChannelsMutex sync.RWMutex
+	killChannels    map[uuid.UUID]chan bool
+	killMutex       sync.RWMutex
+	sessionRepo     interface{
+		GetActiveSessions(ctx context.Context) ([]*repository.SessionData, error)
+		UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
+		UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
+	}
+	logger          zerolog.Logger
+	eventHandler    EventHandler
+}
+
+
+
+// PairSuccessEvent representa o evento de pareamento bem-sucedido
+type PairSuccessEvent struct {
+	SessionID    uuid.UUID
+	JID          string
+	BusinessName string
+	Platform     string
 }
 
 // EventHandler define a interface para manipular eventos do WhatsApp
@@ -44,29 +67,184 @@ type EventHandler interface {
 }
 
 // NewWhatsAppClient cria uma nova instância do cliente WhatsApp
-func NewWhatsAppClient(dbContainer *sqlstore.Container, logger zerolog.Logger, eventHandler EventHandler) *WhatsAppClient {
+func NewWhatsAppClient(dbContainer *sqlstore.Container, sessionRepo interface{
+	GetActiveSessions(ctx context.Context) ([]*repository.SessionData, error)
+	UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
+	UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
+}, logger zerolog.Logger, eventHandler EventHandler) *WhatsAppClient {
 	return &WhatsAppClient{
 		container:    dbContainer,
 		clients:      make(map[uuid.UUID]*whatsmeow.Client),
 		httpClients:  make(map[uuid.UUID]*resty.Client),
+		qrChannels:   make(map[uuid.UUID]<-chan whatsmeow.QRChannelItem),
+		killChannels: make(map[uuid.UUID]chan bool),
+		sessionRepo:  sessionRepo,
 		logger:       logger,
 		eventHandler: eventHandler,
 	}
 }
 
-// Connect estabelece conexão com o WhatsApp
-func (c *WhatsAppClient) Connect(ctx context.Context, sessionID uuid.UUID) error {
+// ConnectOnStartup reconecta automaticamente sessões ativas com JID
+func (c *WhatsAppClient) ConnectOnStartup(ctx context.Context) error {
+	c.logger.Info().Msg("Iniciando reconexão automática de sessões ativas")
+
+	// Buscar sessões ativas com JID no banco
+	sessions, err := c.sessionRepo.GetActiveSessions(ctx)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("Erro ao buscar sessões ativas para reconexão")
+		return fmt.Errorf("erro ao buscar sessões ativas: %w", err)
+	}
+
+	if len(sessions) == 0 {
+		c.logger.Info().Msg("Nenhuma sessão ativa encontrada para reconexão")
+		return nil
+	}
+
+	c.logger.Info().Int("count", len(sessions)).Msg("Sessões ativas encontradas para reconexão")
+
+	// Reconectar cada sessão em paralelo
+	var wg sync.WaitGroup
+	reconnectedCount := 0
+	failedCount := 0
+	var mu sync.Mutex
+
+	for _, session := range sessions {
+		wg.Add(1)
+		go func(sess *repository.SessionData) {
+			defer wg.Done()
+
+			if err := c.reconnectSession(ctx, sess); err != nil {
+				c.logger.Error().
+					Err(err).
+					Str("session_id", sess.ID.String()).
+					Str("session_name", sess.Name).
+					Str("jid", sess.JID).
+					Msg("Falha ao reconectar sessão")
+
+				mu.Lock()
+				failedCount++
+				mu.Unlock()
+			} else {
+				c.logger.Info().
+					Str("session_id", sess.ID.String()).
+					Str("session_name", sess.Name).
+					Str("jid", sess.JID).
+					Msg("Sessão reconectada com sucesso")
+
+				mu.Lock()
+				reconnectedCount++
+				mu.Unlock()
+			}
+		}(session)
+	}
+
+	// Aguardar todas as reconexões
+	wg.Wait()
+
+	c.logger.Info().
+		Int("total", len(sessions)).
+		Int("reconnected", reconnectedCount).
+		Int("failed", failedCount).
+		Msg("Processo de reconexão automática concluído")
+
+	return nil
+}
+
+// reconnectSession reconecta uma sessão específica usando o JID armazenado
+func (c *WhatsAppClient) reconnectSession(ctx context.Context, session *repository.SessionData) error {
+	// Parse do JID
+	jid, err := types.ParseJID(session.JID)
+	if err != nil {
+		return fmt.Errorf("erro ao fazer parse do JID %s: %w", session.JID, err)
+	}
+
+	// Obter device store usando o JID
+	deviceStore, err := c.container.GetDevice(ctx, jid)
+	if err != nil {
+		return fmt.Errorf("erro ao obter device store para JID %s: %w", session.JID, err)
+	}
+
+	// Verificar se o device está autenticado
+	if deviceStore.ID == nil {
+		return fmt.Errorf("device store não possui ID válido para sessão %s", session.ID.String())
+	}
+
+	// Configurar propriedades do device
+	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_UNKNOWN.Enum()
+	store.DeviceProps.Os = proto.String("ZapCore")
+
+	// Criar logger para o cliente
+	clientLog := waLog.Stdout("Client", "INFO", true)
+
+	// Criar cliente WhatsApp
+	client := whatsmeow.NewClient(deviceStore, clientLog)
+
+	// Adicionar event handler
+	client.AddEventHandler(func(evt interface{}) {
+		c.handleWhatsAppEvent(session.ID, evt)
+	})
+
+	// Conectar (sem QR code, pois já está autenticado)
+	err = client.Connect()
+	if err != nil {
+		return fmt.Errorf("erro ao conectar cliente para sessão %s: %w", session.ID.String(), err)
+	}
+
+	// Armazenar cliente
 	c.clientsMutex.Lock()
-	defer c.clientsMutex.Unlock()
+	c.clients[session.ID] = client
+	c.clientsMutex.Unlock()
+
+	// Criar cliente HTTP
+	httpClient := c.createHTTPClient()
+	c.httpMutex.Lock()
+	c.httpClients[session.ID] = httpClient
+	c.httpMutex.Unlock()
+
+	// Criar canal de kill para controlar a conexão
+	c.killMutex.Lock()
+	c.killChannels[session.ID] = make(chan bool)
+	c.killMutex.Unlock()
+
+	// Iniciar goroutine para manter cliente vivo
+	go c.keepClientAlive(session.ID)
+
+	return nil
+}
+
+// Connect estabelece conexão com o WhatsApp seguindo o padrão do wuzapi
+func (c *WhatsAppClient) Connect(ctx context.Context, sessionID uuid.UUID) error {
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Iniciando conexão com WhatsApp")
+
+	// Atualizar status para "connecting"
+	if err := c.sessionRepo.UpdateStatus(ctx, sessionID, session.WhatsAppStatusConnecting); err != nil {
+		c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao atualizar status para connecting")
+	}
 
 	// Verificar se já existe um cliente conectado
-	if client, exists := c.clients[sessionID]; exists {
-		if client.IsConnected() {
-			return nil
-		}
-		// Remover cliente desconectado
-		delete(c.clients, sessionID)
+	c.clientsMutex.RLock()
+	if client, exists := c.clients[sessionID]; exists && client.IsConnected() {
+		c.clientsMutex.RUnlock()
+		c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente já conectado")
+		return nil
 	}
+	c.clientsMutex.RUnlock()
+
+	// Criar canal de kill para controlar a conexão
+	c.killMutex.Lock()
+	c.killChannels[sessionID] = make(chan bool)
+	c.killMutex.Unlock()
+
+	// Iniciar cliente em goroutine separada (padrão wuzapi)
+	go c.startClient(sessionID)
+
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Processo de conexão iniciado")
+	return nil
+}
+
+// startClient inicia o cliente WhatsApp (baseado no wuzapi)
+func (c *WhatsAppClient) startClient(sessionID uuid.UUID) {
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Iniciando cliente WhatsApp")
 
 	// Criar novo device store
 	deviceStore := c.container.NewDevice()
@@ -92,89 +270,206 @@ func (c *WhatsAppClient) Connect(ctx context.Context, sessionID uuid.UUID) error
 	c.httpClients[sessionID] = httpClient
 	c.httpMutex.Unlock()
 
-	// Se não está autenticado, obter canal QR antes de conectar
+	// Verificar se precisa de autenticação
 	if client.Store.ID == nil {
-		_, err := client.GetQRChannel(ctx)
+		// Não está autenticado, precisa de QR code
+		c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente não autenticado, gerando QR code")
+
+		qrChan, err := client.GetQRChannel(context.Background())
 		if err != nil {
 			c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao obter canal QR")
-			return fmt.Errorf("erro ao obter canal QR: %w", err)
+			return
 		}
+
+		// Conectar primeiro para poder gerar QR
+		err = client.Connect()
+		if err != nil {
+			c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao conectar cliente")
+			return
+		}
+
+		// Armazenar cliente
+		c.clientsMutex.Lock()
+		c.clients[sessionID] = client
+		c.clientsMutex.Unlock()
+
+		// Processar eventos QR
+		c.processQREvents(sessionID, qrChan)
+	} else {
+		// Já está autenticado, apenas conectar
+		c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente já autenticado, conectando")
+
+		err := client.Connect()
+		if err != nil {
+			c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao conectar cliente")
+			return
+		}
+
+		// Armazenar cliente
+		c.clientsMutex.Lock()
+		c.clients[sessionID] = client
+		c.clientsMutex.Unlock()
 	}
 
-	// Conectar
-	err := client.Connect()
-	if err != nil {
-		c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao conectar cliente WhatsApp")
-		return fmt.Errorf("erro ao conectar: %w", err)
-	}
-
-	// Armazenar cliente
-	c.clients[sessionID] = client
-
-	c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente WhatsApp conectado com sucesso")
-	return nil
+	// Loop para manter cliente vivo
+	c.keepClientAlive(sessionID)
 }
 
 // Disconnect encerra a conexão
 func (c *WhatsAppClient) Disconnect(ctx context.Context, sessionID uuid.UUID) error {
-	c.clientsMutex.Lock()
-	defer c.clientsMutex.Unlock()
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Desconectando cliente WhatsApp")
 
-	client, exists := c.clients[sessionID]
-	if !exists {
-		return fmt.Errorf("cliente não encontrado para sessão %s", sessionID.String())
+	// Enviar sinal de kill
+	c.killMutex.RLock()
+	if killChan, exists := c.killChannels[sessionID]; exists {
+		select {
+		case killChan <- true:
+		default:
+		}
 	}
+	c.killMutex.RUnlock()
 
-	client.Disconnect()
-	delete(c.clients, sessionID)
+	// Remover cliente
+	c.clientsMutex.Lock()
+	if client, exists := c.clients[sessionID]; exists {
+		client.Disconnect()
+		delete(c.clients, sessionID)
+	}
+	c.clientsMutex.Unlock()
 
 	// Remover cliente HTTP
 	c.httpMutex.Lock()
 	delete(c.httpClients, sessionID)
 	c.httpMutex.Unlock()
 
+	// Remover canais
+	c.qrChannelsMutex.Lock()
+	delete(c.qrChannels, sessionID)
+	c.qrChannelsMutex.Unlock()
+
+	c.killMutex.Lock()
+	delete(c.killChannels, sessionID)
+	c.killMutex.Unlock()
+
 	c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente WhatsApp desconectado")
 	return nil
 }
 
-// GetQRCode gera QR Code para autenticação
+// processQREvents processa eventos do canal QR (baseado no wuzapi)
+func (c *WhatsAppClient) processQREvents(sessionID uuid.UUID, qrChan <-chan whatsmeow.QRChannelItem) {
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Processando eventos QR")
+
+	for evt := range qrChan {
+		switch evt.Event {
+		case "code":
+			c.logger.Info().Str("session_id", sessionID.String()).Msg("QR Code gerado")
+
+			// Exibir QR code no terminal (como no wuzapi)
+			fmt.Printf("\n=== QR CODE PARA SESSÃO %s ===\n", sessionID.String())
+			qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+			fmt.Printf("QR Code: %s\n", evt.Code)
+			fmt.Printf("=== Escaneie o código acima com seu WhatsApp ===\n\n")
+
+			// Gerar QR code em base64 para armazenar
+			image, err := qrcode.Encode(evt.Code, qrcode.Medium, 256)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("Erro ao gerar QR code em base64")
+			} else {
+				base64QR := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
+
+				// Armazenar QR code
+				c.qrChannelsMutex.Lock()
+				// Aqui você pode salvar o QR code no banco se necessário
+				// Por enquanto, apenas logamos
+				c.logger.Info().Str("session_id", sessionID.String()).Str("qr_base64", base64QR).Msg("QR Code base64 gerado")
+				c.qrChannelsMutex.Unlock()
+			}
+
+		case "timeout":
+			c.logger.Warn().Str("session_id", sessionID.String()).Msg("QR Code expirou")
+			fmt.Printf("\n⏰ QR Code expirou para sessão %s. Tente conectar novamente.\n\n", sessionID.String())
+
+			// Limpar cliente
+			c.clientsMutex.Lock()
+			if client, exists := c.clients[sessionID]; exists {
+				client.Disconnect()
+				delete(c.clients, sessionID)
+			}
+			c.clientsMutex.Unlock()
+
+			// Enviar sinal de kill
+			c.killMutex.RLock()
+			if killChan, exists := c.killChannels[sessionID]; exists {
+				select {
+				case killChan <- true:
+				default:
+				}
+			}
+			c.killMutex.RUnlock()
+			return
+
+		case "success":
+			c.logger.Info().Str("session_id", sessionID.String()).Msg("QR Code escaneado com sucesso")
+			fmt.Printf("\n✅ QR Code escaneado com sucesso para sessão %s!\n\n", sessionID.String())
+
+			// QR foi escaneado, sair do loop
+			return
+
+		default:
+			c.logger.Info().Str("session_id", sessionID.String()).Str("event", evt.Event).Msg("Evento QR recebido")
+		}
+	}
+}
+
+// keepClientAlive mantém o cliente vivo (baseado no wuzapi)
+func (c *WhatsAppClient) keepClientAlive(sessionID uuid.UUID) {
+	c.logger.Info().Str("session_id", sessionID.String()).Msg("Iniciando loop de manutenção do cliente")
+
+	c.killMutex.RLock()
+	killChan, exists := c.killChannels[sessionID]
+	c.killMutex.RUnlock()
+
+	if !exists {
+		c.logger.Error().Str("session_id", sessionID.String()).Msg("Canal de kill não encontrado")
+		return
+	}
+
+	for {
+		select {
+		case <-killChan:
+			c.logger.Info().Str("session_id", sessionID.String()).Msg("Recebido sinal de kill, encerrando cliente")
+
+			// Limpar cliente
+			c.clientsMutex.Lock()
+			if client, exists := c.clients[sessionID]; exists {
+				client.Disconnect()
+				delete(c.clients, sessionID)
+			}
+			c.clientsMutex.Unlock()
+
+			return
+		default:
+			time.Sleep(1000 * time.Millisecond)
+		}
+	}
+}
+
+// GetQRCode obtém QR Code (método simplificado)
 func (c *WhatsAppClient) GetQRCode(ctx context.Context, sessionID uuid.UUID) (string, error) {
 	c.clientsMutex.RLock()
 	client, exists := c.clients[sessionID]
 	c.clientsMutex.RUnlock()
 
 	if !exists {
-		return "", fmt.Errorf("cliente não encontrado para sessão %s", sessionID.String())
+		return "", fmt.Errorf("cliente não encontrado para sessão %s. Execute /connect primeiro", sessionID.String())
 	}
 
 	if client.Store.ID != nil {
 		return "", fmt.Errorf("cliente já está autenticado")
 	}
 
-	qrChan, err := client.GetQRChannel(ctx)
-	if err != nil {
-		return "", fmt.Errorf("erro ao obter canal QR: %w", err)
-	}
-
-	// Aguardar pelo QR code
-	select {
-	case evt := <-qrChan:
-		if evt.Event == "code" {
-			// Gerar QR code em base64
-			image, err := qrcode.Encode(evt.Code, qrcode.Medium, 256)
-			if err != nil {
-				return "", fmt.Errorf("erro ao gerar QR code: %w", err)
-			}
-
-			base64QR := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
-			return base64QR, nil
-		}
-		return "", fmt.Errorf("evento QR inesperado: %s", evt.Event)
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-time.After(30 * time.Second):
-		return "", fmt.Errorf("timeout ao aguardar QR code")
-	}
+	// Retornar mensagem informativa
+	return "", fmt.Errorf("QR Code sendo processado. Verifique o terminal do servidor")
 }
 
 // PairPhone emparelha com um número de telefone
@@ -211,7 +506,7 @@ func (c *WhatsAppClient) GetStatus(ctx context.Context, sessionID uuid.UUID) (wh
 		if client.Store.ID != nil {
 			return whatsapp.StatusConnected, nil
 		}
-		return whatsapp.StatusQRCode, nil
+		return whatsapp.StatusConnecting, nil
 	}
 
 	return whatsapp.StatusDisconnected, nil
@@ -477,7 +772,7 @@ func (c *WhatsAppClient) parseJID(jidStr string) (types.JID, error) {
 	return jid, nil
 }
 
-// handleWhatsAppEvent manipula eventos do WhatsApp
+// handleWhatsAppEvent manipula eventos do WhatsApp (baseado no wuzapi)
 func (c *WhatsAppClient) handleWhatsAppEvent(sessionID uuid.UUID, evt interface{}) {
 	switch e := evt.(type) {
 	case *events.Message:
@@ -485,6 +780,7 @@ func (c *WhatsAppClient) handleWhatsAppEvent(sessionID uuid.UUID, evt interface{
 			Str("session_id", sessionID.String()).
 			Str("message_id", e.Info.ID).
 			Str("from", e.Info.SourceString()).
+			Str("pushname", e.Info.PushName).
 			Msg("Mensagem recebida")
 
 	case *events.Receipt:
@@ -492,18 +788,98 @@ func (c *WhatsAppClient) handleWhatsAppEvent(sessionID uuid.UUID, evt interface{
 			Str("session_id", sessionID.String()).
 			Strs("message_ids", e.MessageIDs).
 			Str("type", string(e.Type)).
+			Str("source", e.SourceString()).
 			Msg("Recibo recebido")
 
 	case *events.Connected:
 		c.logger.Info().
 			Str("session_id", sessionID.String()).
-			Msg("Cliente conectado")
+			Msg("Cliente conectado ao WhatsApp")
+
+		// Atualizar status para "connected"
+		ctx := context.Background()
+		if err := c.sessionRepo.UpdateStatus(ctx, sessionID, session.WhatsAppStatusConnected); err != nil {
+			c.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao atualizar status para connected")
+		}
+
+		// Enviar presença disponível
+		c.clientsMutex.RLock()
+		if client, exists := c.clients[sessionID]; exists {
+			if len(client.Store.PushName) > 0 {
+				err := client.SendPresence(types.PresenceAvailable)
+				if err != nil {
+					c.logger.Warn().Err(err).Msg("Falha ao enviar presença disponível")
+				} else {
+					c.logger.Info().Msg("Presença marcada como disponível")
+				}
+			}
+		}
+		c.clientsMutex.RUnlock()
+
+	case *events.PairSuccess:
+		c.logger.Info().
+			Str("session_id", sessionID.String()).
+			Str("jid", e.ID.String()).
+			Str("business_name", e.BusinessName).
+			Str("platform", e.Platform).
+			Msg("Pareamento QR realizado com sucesso")
+
+		fmt.Printf("\n🎉 Pareamento realizado com sucesso!\n")
+		fmt.Printf("JID: %s\n", e.ID.String())
+		fmt.Printf("Nome do negócio: %s\n", e.BusinessName)
+		fmt.Printf("Plataforma: %s\n\n", e.Platform)
+
+		// Salvar JID no banco de dados para reconexão futura
+		if c.eventHandler != nil {
+			c.eventHandler.HandleEvent(sessionID, &PairSuccessEvent{
+				SessionID:    sessionID,
+				JID:          e.ID.String(),
+				BusinessName: e.BusinessName,
+				Platform:     e.Platform,
+			})
+		}
 
 	case *events.LoggedOut:
 		c.logger.Info().
 			Str("session_id", sessionID.String()).
 			Str("reason", e.Reason.String()).
 			Msg("Cliente deslogado")
+
+		// Enviar sinal de kill
+		c.killMutex.RLock()
+		if killChan, exists := c.killChannels[sessionID]; exists {
+			select {
+			case killChan <- true:
+			default:
+			}
+		}
+		c.killMutex.RUnlock()
+
+	case *events.StreamReplaced:
+		c.logger.Info().
+			Str("session_id", sessionID.String()).
+			Msg("Stream substituído")
+
+	case *events.Presence:
+		if e.Unavailable {
+			if e.LastSeen.IsZero() {
+				c.logger.Info().
+					Str("session_id", sessionID.String()).
+					Str("from", e.From.String()).
+					Msg("Usuário ficou offline")
+			} else {
+				c.logger.Info().
+					Str("session_id", sessionID.String()).
+					Str("from", e.From.String()).
+					Str("last_seen", e.LastSeen.String()).
+					Msg("Usuário ficou offline")
+			}
+		} else {
+			c.logger.Info().
+				Str("session_id", sessionID.String()).
+				Str("from", e.From.String()).
+				Msg("Usuário ficou online")
+		}
 
 	default:
 		c.logger.Debug().

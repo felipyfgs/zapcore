@@ -118,8 +118,11 @@ func (s *Server) setupRoutes() *gin.Engine {
 	// Criar repositórios
 	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger)
 
+	// Criar event handler para WhatsApp
+	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger)
+
 	// Criar cliente WhatsApp
-	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), s.logger, nil)
+	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger, eventHandler)
 
 	// Criar use cases
 	createUseCase := session.NewCreateUseCase(sessionRepo, s.logger)
@@ -161,6 +164,12 @@ func (s *Server) Start() error {
 		Str("address", s.config.GetServerAddress()).
 		Str("env", s.config.Server.Env).
 		Msg("Iniciando servidor HTTP")
+
+	// Reconectar sessões ativas automaticamente
+	if err := s.connectActiveSessionsOnStartup(); err != nil {
+		s.logger.Error().Err(err).Msg("Erro ao reconectar sessões ativas")
+		// Não retornar erro aqui para não impedir o servidor de iniciar
+	}
 
 	// Canal para capturar sinais do sistema
 	quit := make(chan os.Signal, 1)
@@ -258,4 +267,16 @@ func (s *Server) GetLogger() zerolog.Logger {
 // GetDB retorna a instância do banco de dados
 func (s *Server) GetDB() *database.DB {
 	return s.db
+}
+
+// connectActiveSessionsOnStartup reconecta sessões ativas automaticamente
+func (s *Server) connectActiveSessionsOnStartup() error {
+	// Criar repositórios e cliente WhatsApp
+	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger)
+	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger)
+	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger, eventHandler)
+
+	// Chamar ConnectOnStartup
+	ctx := context.Background()
+	return whatsappClient.ConnectOnStartup(ctx)
 }

@@ -13,9 +13,6 @@ const (
 	WhatsAppStatusDisconnected WhatsAppSessionStatus = "disconnected"
 	WhatsAppStatusConnecting   WhatsAppSessionStatus = "connecting"
 	WhatsAppStatusConnected    WhatsAppSessionStatus = "connected"
-	WhatsAppStatusQRCode       WhatsAppSessionStatus = "qr_code"
-	WhatsAppStatusPairing      WhatsAppSessionStatus = "pairing"
-	WhatsAppStatusError        WhatsAppSessionStatus = "error"
 )
 
 // Session representa uma sessão do WhatsApp
@@ -105,7 +102,7 @@ func (s *Session) IsConnected() bool {
 
 // CanConnect verifica se a sessão pode ser conectada
 func (s *Session) CanConnect() bool {
-	return s.IsActive && (s.Status == WhatsAppStatusDisconnected || s.Status == WhatsAppStatusError)
+	return s.IsActive && s.Status == WhatsAppStatusDisconnected
 }
 
 // SetMetadata define um valor nos metadados
