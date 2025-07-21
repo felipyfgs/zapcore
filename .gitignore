@@ -48,9 +48,11 @@ sessions/
 *.session
 *.db
 
-# Arquivos de mídia
-media/
+# Arquivos de mídia (apenas na raiz e uploads)
+/media/
 uploads/
+# Não ignorar código relacionado a mídia
+!internal/shared/media/
 
 # Arquivos de backup
 *.bak
