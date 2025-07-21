@@ -40,9 +40,9 @@ func NewSendTextUseCase(
 // SendTextRequest representa a requisição para enviar texto
 type SendTextRequest struct {
 	SessionID uuid.UUID `json:"session_id" validate:"required"`
-	ToJID     string    `json:"to_jid" validate:"required"`
-	Content   string    `json:"content" validate:"required,min=1,max=4096"`
-	ReplyToID string    `json:"reply_to_id,omitempty"`
+	To        string    `json:"to" validate:"required"`
+	Text      string    `json:"text" validate:"required,min=1,max=4096"`
+	ReplyID   string    `json:"replyId,omitempty"`
 }
 
 // SendTextResponse representa a resposta do envio de texto
@@ -75,16 +75,16 @@ func (uc *SendTextUseCase) Execute(ctx context.Context, req *SendTextRequest) (*
 
 	uc.logger.Debug().
 		Str("session_id", req.SessionID.String()).
-		Str("to_jid", req.ToJID).
-		Int("content_length", len(req.Content)).
+		Str("to", req.To).
+		Int("text_length", len(req.Text)).
 		Msg("Preparando envio de mensagem de texto")
 
 	// Preparar requisição para WhatsApp
 	whatsappReq := &whatsapp.SendTextRequest{
 		SessionID: req.SessionID,
-		ToJID:     req.ToJID,
-		Content:   req.Content,
-		ReplyToID: req.ReplyToID,
+		ToJID:     req.To,
+		Content:   req.Text,
+		ReplyToID: req.ReplyID,
 	}
 
 	// Enviar via WhatsApp
@@ -100,8 +100,8 @@ func (uc *SendTextUseCase) Execute(ctx context.Context, req *SendTextRequest) (*
 	uc.logger.Info().
 		Str("session_id", req.SessionID.String()).
 		Str("whatsapp_id", whatsappResp.MessageID).
-		Str("to_jid", req.ToJID).
-		Int("content_length", len(req.Content)).
+		Str("to", req.To).
+		Int("text_length", len(req.Text)).
 		Msg("Mensagem de texto enviada com sucesso via WhatsApp")
 
 	return &SendTextResponse{

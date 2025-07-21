@@ -77,8 +77,8 @@ func (h *MessageHandler) SendText(c *gin.Context) {
 	}
 
 	h.logger.Debug().
-		Str("to_jid", req.ToJID).
-		Int("content_length", len(req.Content)).
+		Str("to", req.To).
+		Int("text_length", len(req.Text)).
 		Msg("Dados da requisição processados")
 
 	req.SessionID = sessionID

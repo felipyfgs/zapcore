@@ -88,9 +88,9 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
   -d '{
-    "to_jid": "5511999999999@s.whatsapp.net",
-    "content": "Olá! Esta é uma mensagem de teste.",
-    "reply_to_id": "optional_message_id"
+    "to": "5511999999999@s.whatsapp.net",
+    "text": "Olá! Esta é uma mensagem de teste.",
+    "replyId": "optional_message_id"
   }'
 ```
 
@@ -412,7 +412,7 @@ Para dúvidas ou problemas:
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{"to_jid": "5511999999999@s.whatsapp.net", "content": "Olá!"}'
+  -d '{"to": "5511999999999@s.whatsapp.net", "text": "Olá!", "replyId": "optional_message_id"}'
 ```
 
 ### Mídia (3 formatos)
