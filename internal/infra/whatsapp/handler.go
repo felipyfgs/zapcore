@@ -62,7 +62,7 @@ func (h *SessionEventHandler) HandleEvent(sessionID uuid.UUID, event interface{}
 // handlePairSuccess processa o evento de pareamento bem-sucedido
 func (h *SessionEventHandler) handlePairSuccess(sessionID uuid.UUID, event *PairSuccessEvent) {
 	ctx := context.Background()
-	
+
 	// Salvar JID no banco de dados
 	err := h.sessionRepo.UpdateJID(ctx, sessionID, event.JID)
 	if err != nil {
@@ -83,7 +83,7 @@ func (h *SessionEventHandler) handlePairSuccess(sessionID uuid.UUID, event *Pair
 }
 
 // handleConnected processa o evento de conexão estabelecida
-func (h *SessionEventHandler) handleConnected(sessionID uuid.UUID, event *ConnectedEvent) {
+func (h *SessionEventHandler) handleConnected(sessionID uuid.UUID, _ *ConnectedEvent) {
 	ctx := context.Background()
 
 	// Atualizar status para "connected"

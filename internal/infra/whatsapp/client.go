@@ -1,11 +1,14 @@
 package whatsapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -32,6 +35,59 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Constantes para validação de mídia (baseado na documentação oficial do WhatsApp Business API 2024)
+const (
+	// Limites de tamanho em bytes - atualizados conforme documentação oficial
+	MaxImageSize    = 5 * 1024 * 1024   // 5MB (limite oficial do WhatsApp)
+	MaxVideoSize    = 16 * 1024 * 1024  // 16MB (limite oficial do WhatsApp)
+	MaxAudioSize    = 16 * 1024 * 1024  // 16MB (limite oficial do WhatsApp)
+	MaxDocumentSize = 100 * 1024 * 1024 // 100MB (limite oficial do WhatsApp Cloud API)
+	MaxStickerSize  = 500 * 1024        // 500KB (limite oficial do WhatsApp)
+)
+
+// Tipos MIME suportados
+var (
+	SupportedImageMimes = []string{
+		"image/jpeg",
+		"image/png",
+		"image/webp",
+	}
+
+	SupportedVideoMimes = []string{
+		"video/mp4",
+		"video/3gpp",
+		"video/quicktime",
+		"video/avi",
+		"video/mkv",
+	}
+
+	SupportedAudioMimes = []string{
+		"audio/mpeg",
+		"audio/mp3",
+		"audio/aac",
+		"audio/ogg",
+		"audio/wav",
+		"audio/m4a",
+	}
+
+	SupportedDocumentMimes = []string{
+		"application/pdf",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.ms-excel",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.ms-powerpoint",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"text/plain",
+		"application/zip",
+		"application/x-rar-compressed",
+	}
+
+	SupportedStickerMimes = []string{
+		"image/webp",
+	}
+)
+
 // WhatsAppClient implementa a interface whatsapp.Client
 type WhatsAppClient struct {
 	container       *sqlstore.Container
@@ -43,16 +99,14 @@ type WhatsAppClient struct {
 	qrChannelsMutex sync.RWMutex
 	killChannels    map[uuid.UUID]chan bool
 	killMutex       sync.RWMutex
-	sessionRepo     interface{
+	sessionRepo     interface {
 		GetActiveSessions(ctx context.Context) ([]*repository.SessionData, error)
 		UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 		UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
 	}
-	logger          *logger.Logger
-	eventHandler    EventHandler
+	logger       *logger.Logger
+	eventHandler EventHandler
 }
-
-
 
 // PairSuccessEvent representa o evento de pareamento bem-sucedido
 type PairSuccessEvent struct {
@@ -68,7 +122,7 @@ type EventHandler interface {
 }
 
 // NewWhatsAppClient cria uma nova instância do cliente WhatsApp
-func NewWhatsAppClient(dbContainer *sqlstore.Container, sessionRepo interface{
+func NewWhatsAppClient(dbContainer *sqlstore.Container, sessionRepo interface {
 	GetActiveSessions(ctx context.Context) ([]*repository.SessionData, error)
 	UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error
 	UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error
@@ -191,9 +245,30 @@ func (c *WhatsAppClient) reconnectSession(ctx context.Context, session *reposito
 		return fmt.Errorf("erro ao conectar cliente para sessão %s: %w", session.ID.String(), err)
 	}
 
-	// Armazenar cliente
+	// Aguardar um momento para garantir que a conexão seja estabelecida
+	time.Sleep(100 * time.Millisecond)
+
+	// Verificar se o cliente está realmente conectado antes de armazenar
+	if !client.IsConnected() {
+		return fmt.Errorf("cliente não conseguiu se conectar para sessão %s", session.ID.String())
+	}
+
+	// Armazenar cliente com verificação de integridade
 	c.clientsMutex.Lock()
 	c.clients[session.ID] = client
+
+	// Verificar se o cliente foi realmente armazenado
+	if storedClient, exists := c.clients[session.ID]; exists && storedClient == client {
+		c.logger.Info().
+			Str("session_id", session.ID.String()).
+			Int("total_clients_after", len(c.clients)).
+			Bool("is_connected", client.IsConnected()).
+			Msg("✅ Cliente armazenado com sucesso no mapa durante reconexão")
+	} else {
+		c.logger.Error().
+			Str("session_id", session.ID.String()).
+			Msg("❌ Falha ao armazenar cliente no mapa")
+	}
 	c.clientsMutex.Unlock()
 
 	// Criar cliente HTTP
@@ -231,13 +306,48 @@ func (c *WhatsAppClient) Connect(ctx context.Context, sessionID uuid.UUID) error
 	}
 	c.clientsMutex.RUnlock()
 
+	// Verificar se a sessão já tem JID (está autenticada)
+	sessions, err := c.sessionRepo.GetActiveSessions(ctx)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("Erro ao buscar sessões para verificar JID")
+		return fmt.Errorf("erro ao verificar estado da sessão: %w", err)
+	}
+
+	// Procurar a sessão específica
+	var sessionData *repository.SessionData
+	for _, session := range sessions {
+		if session.ID == sessionID {
+			sessionData = session
+			break
+		}
+	}
+
 	// Criar canal de kill para controlar a conexão
 	c.killMutex.Lock()
 	c.killChannels[sessionID] = make(chan bool)
 	c.killMutex.Unlock()
 
-	// Iniciar cliente em goroutine separada (padrão wuzapi)
-	go c.startClient(sessionID)
+	// Decidir como conectar baseado no estado da sessão
+	if sessionData != nil && sessionData.JID != "" {
+		// Sessão já autenticada, usar reconnectSession
+		c.logger.Info().
+			Str("session_id", sessionID.String()).
+			Str("jid", sessionData.JID).
+			Msg("Sessão já autenticada, reconectando")
+
+		go func() {
+			if err := c.reconnectSession(ctx, sessionData); err != nil {
+				c.logger.Error().Err(err).Msg("Erro na reconexão")
+			}
+		}()
+	} else {
+		// Nova sessão, usar startClient para QR code
+		c.logger.Info().
+			Str("session_id", sessionID.String()).
+			Msg("Nova sessão, iniciando processo de autenticação")
+
+		go c.startClient(sessionID)
+	}
 
 	c.logger.Info().Str("session_id", sessionID.String()).Msg("Processo de conexão iniciado")
 	return nil
@@ -443,6 +553,8 @@ func (c *WhatsAppClient) keepClientAlive(sessionID uuid.UUID) {
 		return
 	}
 
+	c.logger.Debug().Str("session_id", sessionID.String()).Msg("Loop de manutenção iniciado, aguardando sinais")
+
 	for {
 		select {
 		case <-killChan:
@@ -451,14 +563,21 @@ func (c *WhatsAppClient) keepClientAlive(sessionID uuid.UUID) {
 			// Limpar cliente
 			c.clientsMutex.Lock()
 			if client, exists := c.clients[sessionID]; exists {
+				c.logger.Debug().Str("session_id", sessionID.String()).Msg("Desconectando e removendo cliente do mapa")
 				client.Disconnect()
 				delete(c.clients, sessionID)
+			} else {
+				c.logger.Warn().Str("session_id", sessionID.String()).Msg("Cliente não encontrado no mapa durante kill")
 			}
 			c.clientsMutex.Unlock()
 
+			c.logger.Info().Str("session_id", sessionID.String()).Msg("Cliente removido, encerrando loop de manutenção")
 			return
 		default:
+			// Simples como no wuzapi - apenas sleep
 			time.Sleep(1000 * time.Millisecond)
+			// Log comentado para evitar spam (como no wuzapi)
+			// c.logger.Debug().Str("session_id", sessionID.String()).Msg("Loop the loop")
 		}
 	}
 }
@@ -523,15 +642,27 @@ func (c *WhatsAppClient) GetStatus(ctx context.Context, sessionID uuid.UUID) (wh
 
 // SendTextMessage envia mensagem de texto
 func (c *WhatsAppClient) SendTextMessage(ctx context.Context, req *whatsapp.SendTextRequest) (*whatsapp.MessageResponse, error) {
+	c.logger.Debug().
+		Str("session_id", req.SessionID.String()).
+		Str("to_jid", req.ToJID).
+		Int("content_length", len(req.Content)).
+		Msg("SendTextMessage chamado")
+
 	client, err := c.getClient(req.SessionID)
 	if err != nil {
+		c.logger.Error().Err(err).Str("session_id", req.SessionID.String()).Msg("Erro ao obter cliente")
 		return nil, err
 	}
 
+	c.logger.Debug().Str("session_id", req.SessionID.String()).Msg("Cliente obtido com sucesso")
+
 	jid, err := c.parseJID(req.ToJID)
 	if err != nil {
+		c.logger.Error().Err(err).Str("to_jid", req.ToJID).Msg("Erro ao fazer parse do JID")
 		return nil, fmt.Errorf("JID inválido: %w", err)
 	}
+
+	c.logger.Debug().Str("parsed_jid", jid.String()).Msg("JID parseado com sucesso")
 
 	message := &waProto.Message{
 		Conversation: proto.String(req.Content),
@@ -572,10 +703,21 @@ func (c *WhatsAppClient) SendImageMessage(ctx context.Context, req *whatsapp.Sen
 		return nil, fmt.Errorf("JID inválido: %w", err)
 	}
 
+	// Obter dados da imagem (de io.Reader ou URL)
+	mediaReader, err := c.getMediaData(ctx, req.ImageData, req.ImageURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter dados da imagem: %w", err)
+	}
+
 	// Ler dados da imagem
-	imageData, err := io.ReadAll(req.ImageData)
+	imageData, err := io.ReadAll(mediaReader)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao ler dados da imagem: %w", err)
+	}
+
+	// Validar mídia de imagem
+	if err := validateImageMedia(imageData, req.MimeType); err != nil {
+		return nil, fmt.Errorf("validação de imagem falhou: %w", err)
 	}
 
 	// Fazer upload da imagem
@@ -629,10 +771,21 @@ func (c *WhatsAppClient) SendAudioMessage(ctx context.Context, req *whatsapp.Sen
 		return nil, fmt.Errorf("JID inválido: %w", err)
 	}
 
+	// Obter dados do áudio (de io.Reader ou URL)
+	mediaReader, err := c.getMediaData(ctx, req.AudioData, req.AudioURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter dados do áudio: %w", err)
+	}
+
 	// Ler dados do áudio
-	audioData, err := io.ReadAll(req.AudioData)
+	audioData, err := io.ReadAll(mediaReader)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao ler dados do áudio: %w", err)
+	}
+
+	// Validar mídia de áudio
+	if err := validateAudioMedia(audioData, req.MimeType); err != nil {
+		return nil, fmt.Errorf("validação de áudio falhou: %w", err)
 	}
 
 	// Fazer upload do áudio
@@ -674,19 +827,214 @@ func (c *WhatsAppClient) SendAudioMessage(ctx context.Context, req *whatsapp.Sen
 	}, nil
 }
 
-// SendVideoMessage envia vídeo (não implementado)
+// SendVideoMessage envia vídeo
 func (c *WhatsAppClient) SendVideoMessage(ctx context.Context, req *whatsapp.SendVideoRequest) (*whatsapp.MessageResponse, error) {
-	return nil, fmt.Errorf("SendVideoMessage não implementado ainda")
+	client, err := c.getClient(req.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := c.parseJID(req.ToJID)
+	if err != nil {
+		return nil, fmt.Errorf("JID inválido: %w", err)
+	}
+
+	// Obter dados do vídeo (de io.Reader ou URL)
+	mediaReader, err := c.getMediaData(ctx, req.VideoData, req.VideoURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter dados do vídeo: %w", err)
+	}
+
+	// Ler dados do vídeo
+	videoData, err := io.ReadAll(mediaReader)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler dados do vídeo: %w", err)
+	}
+
+	// Validar mídia de vídeo
+	if err := validateVideoMedia(videoData, req.MimeType); err != nil {
+		return nil, fmt.Errorf("validação de vídeo falhou: %w", err)
+	}
+
+	// Fazer upload do vídeo
+	uploaded, err := client.Upload(ctx, videoData, whatsmeow.MediaVideo)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao fazer upload do vídeo: %w", err)
+	}
+
+	// Criar mensagem de vídeo
+	message := &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String(req.MimeType),
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(videoData))),
+			Caption:       proto.String(req.Caption),
+		},
+	}
+
+	// Adicionar contexto de resposta se especificado
+	if req.ReplyToID != "" {
+		message.VideoMessage.ContextInfo = &waProto.ContextInfo{
+			StanzaID: proto.String(req.ReplyToID),
+		}
+	}
+
+	resp, err := client.SendMessage(ctx, jid, message)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao enviar vídeo: %w", err)
+	}
+
+	return &whatsapp.MessageResponse{
+		MessageID: resp.ID,
+		Status:    "sent",
+		Timestamp: resp.Timestamp.Unix(),
+	}, nil
 }
 
-// SendStickerMessage envia sticker (não implementado)
+// SendStickerMessage envia sticker
 func (c *WhatsAppClient) SendStickerMessage(ctx context.Context, req *whatsapp.SendStickerRequest) (*whatsapp.MessageResponse, error) {
-	return nil, fmt.Errorf("SendStickerMessage não implementado ainda")
+	client, err := c.getClient(req.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := c.parseJID(req.ToJID)
+	if err != nil {
+		return nil, fmt.Errorf("JID inválido: %w", err)
+	}
+
+	// Obter dados do sticker (de io.Reader ou URL)
+	mediaReader, err := c.getMediaData(ctx, req.StickerData, req.StickerURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter dados do sticker: %w", err)
+	}
+
+	// Ler dados do sticker
+	stickerData, err := io.ReadAll(mediaReader)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler dados do sticker: %w", err)
+	}
+
+	// Validar mídia de sticker
+	if err := validateStickerMedia(stickerData, req.MimeType); err != nil {
+		return nil, fmt.Errorf("validação de sticker falhou: %w", err)
+	}
+
+	// Fazer upload do sticker
+	uploaded, err := client.Upload(ctx, stickerData, whatsmeow.MediaImage)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao fazer upload do sticker: %w", err)
+	}
+
+	// Criar mensagem de sticker
+	message := &waProto.Message{
+		StickerMessage: &waProto.StickerMessage{
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String(req.MimeType),
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(stickerData))),
+		},
+	}
+
+	// Adicionar contexto de resposta se especificado
+	if req.ReplyToID != "" {
+		message.StickerMessage.ContextInfo = &waProto.ContextInfo{
+			StanzaID: proto.String(req.ReplyToID),
+		}
+	}
+
+	resp, err := client.SendMessage(ctx, jid, message)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao enviar sticker: %w", err)
+	}
+
+	return &whatsapp.MessageResponse{
+		MessageID: resp.ID,
+		Status:    "sent",
+		Timestamp: resp.Timestamp.Unix(),
+	}, nil
 }
 
-// SendDocumentMessage envia documento (não implementado)
+// SendDocumentMessage envia documento
 func (c *WhatsAppClient) SendDocumentMessage(ctx context.Context, req *whatsapp.SendDocumentRequest) (*whatsapp.MessageResponse, error) {
-	return nil, fmt.Errorf("SendDocumentMessage não implementado ainda")
+	client, err := c.getClient(req.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := c.parseJID(req.ToJID)
+	if err != nil {
+		return nil, fmt.Errorf("JID inválido: %w", err)
+	}
+
+	// Obter dados do documento (de io.Reader ou URL)
+	mediaReader, err := c.getMediaData(ctx, req.DocumentData, req.DocumentURL)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter dados do documento: %w", err)
+	}
+
+	// Ler dados do documento
+	documentData, err := io.ReadAll(mediaReader)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler dados do documento: %w", err)
+	}
+
+	// Validar mídia de documento
+	if err := validateDocumentMedia(documentData, req.MimeType); err != nil {
+		return nil, fmt.Errorf("validação de documento falhou: %w", err)
+	}
+
+	// Fazer upload do documento
+	uploaded, err := client.Upload(ctx, documentData, whatsmeow.MediaDocument)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao fazer upload do documento: %w", err)
+	}
+
+	// Criar mensagem de documento
+	documentMsg := &waProto.DocumentMessage{
+		URL:           proto.String(uploaded.URL),
+		DirectPath:    proto.String(uploaded.DirectPath),
+		MediaKey:      uploaded.MediaKey,
+		Mimetype:      proto.String(req.MimeType),
+		FileEncSHA256: uploaded.FileEncSHA256,
+		FileSHA256:    uploaded.FileSHA256,
+		FileLength:    proto.Uint64(uint64(len(documentData))),
+		FileName:      proto.String(req.FileName),
+	}
+
+	// Adicionar caption se fornecido
+	if req.Caption != "" {
+		documentMsg.Caption = proto.String(req.Caption)
+	}
+
+	message := &waProto.Message{
+		DocumentMessage: documentMsg,
+	}
+
+	// Adicionar contexto de resposta se especificado
+	if req.ReplyToID != "" {
+		message.DocumentMessage.ContextInfo = &waProto.ContextInfo{
+			StanzaID: proto.String(req.ReplyToID),
+		}
+	}
+
+	resp, err := client.SendMessage(ctx, jid, message)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao enviar documento: %w", err)
+	}
+
+	return &whatsapp.MessageResponse{
+		MessageID: resp.ID,
+		Status:    "sent",
+		Timestamp: resp.Timestamp.Unix(),
+	}, nil
 }
 
 // CreateGroup cria um grupo (implementação temporária)
@@ -747,14 +1095,55 @@ func (c *WhatsAppClient) getClient(sessionID uuid.UUID) (*whatsmeow.Client, erro
 	c.clientsMutex.RLock()
 	defer c.clientsMutex.RUnlock()
 
+	c.logger.Debug().
+		Str("session_id", sessionID.String()).
+		Int("total_clients", len(c.clients)).
+		Msg("🔍 Buscando cliente para sessão")
+
+	// Listar todas as sessões disponíveis para debug
+	if len(c.clients) == 0 {
+		c.logger.Warn().Msg("❌ Mapa de clientes está vazio")
+	} else {
+		for id := range c.clients {
+			c.logger.Debug().
+				Str("available_session", id.String()).
+				Bool("is_connected", c.clients[id].IsConnected()).
+				Msg("📱 Cliente disponível")
+		}
+	}
+
 	client, exists := c.clients[sessionID]
 	if !exists {
+		c.logger.Error().
+			Str("session_id", sessionID.String()).
+			Int("total_clients", len(c.clients)).
+			Msg("❌ Cliente não encontrado no mapa")
+
+		// Tentar buscar todas as sessões ativas para debug
+		ctx := context.Background()
+		if sessions, err := c.sessionRepo.GetActiveSessions(ctx); err == nil {
+			c.logger.Debug().Int("active_sessions_in_db", len(sessions)).Msg("Sessões ativas no banco")
+			for _, session := range sessions {
+				c.logger.Debug().
+					Str("db_session_id", session.ID.String()).
+					Str("db_session_jid", session.JID).
+					Msg("Sessão ativa no banco")
+			}
+		}
+
 		return nil, fmt.Errorf("cliente não encontrado para sessão %s", sessionID.String())
 	}
 
 	if !client.IsConnected() {
+		c.logger.Error().
+			Str("session_id", sessionID.String()).
+			Msg("⚠️ Cliente encontrado mas não está conectado")
 		return nil, fmt.Errorf("cliente não está conectado para sessão %s", sessionID.String())
 	}
+
+	c.logger.Debug().
+		Str("session_id", sessionID.String()).
+		Msg("✅ Cliente encontrado e conectado")
 
 	return client, nil
 }
@@ -1016,4 +1405,161 @@ func (c *WhatsAppClient) SetGroupName(ctx context.Context, sessionID uuid.UUID, 
 // SetGroupDescription define descrição do grupo (não implementado)
 func (c *WhatsAppClient) SetGroupDescription(ctx context.Context, sessionID uuid.UUID, groupJID, description string) error {
 	return fmt.Errorf("SetGroupDescription não implementado ainda")
+}
+
+// downloadFromURL baixa mídia de uma URL pública
+func (c *WhatsAppClient) downloadFromURL(ctx context.Context, mediaURL string) (io.Reader, error) {
+	// Validar URL
+	parsedURL, err := url.Parse(mediaURL)
+	if err != nil {
+		return nil, fmt.Errorf("URL inválida: %w", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, fmt.Errorf("esquema de URL não suportado: %s", parsedURL.Scheme)
+	}
+
+	// Criar cliente HTTP com timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Fazer requisição HTTP
+	req, err := http.NewRequestWithContext(ctx, "GET", mediaURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao criar requisição: %w", err)
+	}
+
+	// Adicionar User-Agent
+	req.Header.Set("User-Agent", "ZapCore/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao baixar mídia: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("erro HTTP: %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Ler dados da resposta
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler dados da resposta: %w", err)
+	}
+
+	return bytes.NewReader(data), nil
+}
+
+// validateMimeType valida se o tipo MIME é suportado para o tipo de mídia
+func validateMimeType(mimeType string, supportedMimes []string) error {
+	if mimeType == "" {
+		return fmt.Errorf("tipo MIME não especificado")
+	}
+
+	for _, supported := range supportedMimes {
+		if strings.EqualFold(mimeType, supported) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("tipo MIME não suportado: %s", mimeType)
+}
+
+// validateMediaSize valida se o tamanho da mídia está dentro do limite
+func validateMediaSize(data []byte, maxSize int64, mediaType string) error {
+	size := int64(len(data))
+	if size > maxSize {
+		return fmt.Errorf("arquivo %s muito grande: %d bytes (máximo: %d bytes)",
+			mediaType, size, maxSize)
+	}
+	return nil
+}
+
+// validateImageMedia valida mídia de imagem
+func validateImageMedia(data []byte, mimeType string) error {
+	if err := validateMimeType(mimeType, SupportedImageMimes); err != nil {
+		return err
+	}
+	return validateMediaSize(data, MaxImageSize, "imagem")
+}
+
+// validateVideoMedia valida mídia de vídeo
+func validateVideoMedia(data []byte, mimeType string) error {
+	if err := validateMimeType(mimeType, SupportedVideoMimes); err != nil {
+		return err
+	}
+	return validateMediaSize(data, MaxVideoSize, "vídeo")
+}
+
+// validateAudioMedia valida mídia de áudio
+func validateAudioMedia(data []byte, mimeType string) error {
+	if err := validateMimeType(mimeType, SupportedAudioMimes); err != nil {
+		return err
+	}
+	return validateMediaSize(data, MaxAudioSize, "áudio")
+}
+
+// validateDocumentMedia valida mídia de documento
+func validateDocumentMedia(data []byte, mimeType string) error {
+	if err := validateMimeType(mimeType, SupportedDocumentMimes); err != nil {
+		return err
+	}
+	return validateMediaSize(data, MaxDocumentSize, "documento")
+}
+
+// validateStickerMedia valida mídia de sticker
+func validateStickerMedia(data []byte, mimeType string) error {
+	if err := validateMimeType(mimeType, SupportedStickerMimes); err != nil {
+		return err
+	}
+	return validateMediaSize(data, MaxStickerSize, "sticker")
+}
+
+// getMediaData obtém dados de mídia de io.Reader, URL ou caminho local
+func (c *WhatsAppClient) getMediaData(ctx context.Context, mediaData io.Reader, mediaURL string) (io.Reader, error) {
+	if mediaData != nil {
+		return mediaData, nil
+	}
+
+	if mediaURL != "" {
+		// Verificar se é URL HTTP/HTTPS ou caminho local
+		if strings.HasPrefix(mediaURL, "http://") || strings.HasPrefix(mediaURL, "https://") {
+			// É uma URL pública - fazer download
+			return c.downloadFromURL(ctx, mediaURL)
+		} else {
+			// É um caminho local - abrir arquivo
+			return c.openLocalFile(mediaURL)
+		}
+	}
+
+	return nil, fmt.Errorf("nenhuma fonte de mídia fornecida (dados ou URL)")
+}
+
+// openLocalFile abre um arquivo local e retorna um Reader
+func (c *WhatsAppClient) openLocalFile(filePath string) (io.Reader, error) {
+	// Verificar se o arquivo existe
+	if _, err := os.Stat(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("arquivo não encontrado: %s", filePath)
+		}
+		return nil, fmt.Errorf("erro ao acessar arquivo: %w", err)
+	}
+
+	// Abrir o arquivo
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao abrir arquivo: %w", err)
+	}
+
+	// Ler todo o conteúdo do arquivo
+	data, err := io.ReadAll(file)
+	file.Close() // Fechar o arquivo imediatamente após ler
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler arquivo: %w", err)
+	}
+
+	// Retornar um Reader com os dados
+	return bytes.NewReader(data), nil
 }

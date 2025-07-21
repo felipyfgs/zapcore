@@ -3,6 +3,7 @@ package message
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"zapcore/internal/domain/message"
 	"zapcore/internal/domain/session"
@@ -46,7 +47,6 @@ type SendTextRequest struct {
 
 // SendTextResponse representa a resposta do envio de texto
 type SendTextResponse struct {
-	MessageID  uuid.UUID             `json:"message_id"`
 	WhatsAppID string                `json:"whatsapp_id"`
 	Status     message.MessageStatus `json:"status"`
 	Timestamp  string                `json:"timestamp"`
@@ -73,21 +73,11 @@ func (uc *SendTextUseCase) Execute(ctx context.Context, req *SendTextRequest) (*
 		return nil, session.ErrSessionNotConnected
 	}
 
-	// Criar mensagem
-	msg := message.NewMessage(req.SessionID, message.MessageTypeText, message.MessageDirectionOutbound)
-	msg.ToJID = req.ToJID
-	msg.FromJID = sess.JID
-	msg.SetContent(req.Content)
-
-	if req.ReplyToID != "" {
-		msg.SetReplyTo(req.ReplyToID)
-	}
-
-	// Salvar mensagem como pendente
-	if err := uc.messageRepo.Create(ctx, msg); err != nil {
-		uc.logger.Error().Err(err).Msg("Erro ao salvar mensagem")
-		return nil, fmt.Errorf("erro ao salvar mensagem: %w", err)
-	}
+	uc.logger.Debug().
+		Str("session_id", req.SessionID.String()).
+		Str("to_jid", req.ToJID).
+		Int("content_length", len(req.Content)).
+		Msg("Preparando envio de mensagem de texto")
 
 	// Preparar requisição para WhatsApp
 	whatsappReq := &whatsapp.SendTextRequest{
@@ -100,22 +90,8 @@ func (uc *SendTextUseCase) Execute(ctx context.Context, req *SendTextRequest) (*
 	// Enviar via WhatsApp
 	whatsappResp, err := uc.whatsappClient.SendTextMessage(ctx, whatsappReq)
 	if err != nil {
-		// Marcar mensagem como falha
-		msg.UpdateStatus(message.MessageStatusFailed)
-		uc.messageRepo.Update(ctx, msg)
-
 		uc.logger.Error().Err(err).Msg("Erro ao enviar mensagem via WhatsApp")
-
 		return nil, fmt.Errorf("erro ao enviar mensagem: %w", err)
-	}
-
-	// Atualizar mensagem com ID do WhatsApp
-	msg.MessageID = whatsappResp.MessageID
-	msg.UpdateStatus(message.MessageStatusSent)
-
-	if err := uc.messageRepo.Update(ctx, msg); err != nil {
-		uc.logger.Error().Err(err).Msg("Erro ao atualizar status da mensagem")
-		// Não retorna erro pois a mensagem foi enviada
 	}
 
 	// Atualizar último acesso da sessão
@@ -123,17 +99,15 @@ func (uc *SendTextUseCase) Execute(ctx context.Context, req *SendTextRequest) (*
 
 	uc.logger.Info().
 		Str("session_id", req.SessionID.String()).
-		Str("message_id", msg.ID.String()).
 		Str("whatsapp_id", whatsappResp.MessageID).
 		Str("to_jid", req.ToJID).
 		Int("content_length", len(req.Content)).
-		Msg("Mensagem de texto enviada com sucesso")
+		Msg("Mensagem de texto enviada com sucesso via WhatsApp")
 
 	return &SendTextResponse{
-		MessageID:  msg.ID,
 		WhatsAppID: whatsappResp.MessageID,
-		Status:     msg.Status,
-		Timestamp:  msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		Status:     message.MessageStatusSent,
+		Timestamp:  time.Now().Format("2006-01-02T15:04:05Z07:00"),
 		Message:    "Mensagem enviada com sucesso",
 	}, nil
 }

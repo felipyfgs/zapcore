@@ -43,10 +43,18 @@ func (r *MessageRepository) Create(ctx context.Context, msg *message.Message) er
 		return fmt.Errorf("erro ao serializar metadata: %w", err)
 	}
 
+	// Converter MessageID vazio para NULL
+	var messageID any
+	if msg.MessageID == "" {
+		messageID = nil
+	} else {
+		messageID = msg.MessageID
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		msg.ID,
 		msg.SessionID,
-		msg.MessageID,
+		messageID,
 		msg.Type,
 		msg.Direction,
 		msg.Status,
@@ -250,6 +258,86 @@ func (r *MessageRepository) UpdateStatus(ctx context.Context, messageID string, 
 
 	r.logger.Info().Str("message_id", messageID).Str("status", string(status)).Msg("Status da mensagem atualizado")
 	return nil
+}
+
+// CountByStatus conta mensagens por status
+func (r *MessageRepository) CountByStatus(ctx context.Context, sessionID uuid.UUID, status message.MessageStatus) (int, error) {
+	query := `SELECT COUNT(*) FROM zapcore_messages WHERE session_id = $1 AND status = $2`
+
+	var count int
+	err := r.db.QueryRowContext(ctx, query, sessionID, status).Scan(&count)
+	if err != nil {
+		r.logger.Error().Err(err).
+			Str("session_id", sessionID.String()).
+			Str("status", string(status)).
+			Msg("Erro ao contar mensagens por status")
+		return 0, fmt.Errorf("erro ao contar mensagens por status: %w", err)
+	}
+
+	return count, nil
+}
+
+// List retorna mensagens com filtros opcionais
+func (r *MessageRepository) List(ctx context.Context, filters message.ListFilters) ([]*message.Message, error) {
+	// Implementação básica - pode ser expandida conforme necessário
+	if filters.SessionID != nil {
+		return r.ListBySessionID(ctx, *filters.SessionID, filters.Limit, filters.Offset)
+	}
+
+	// Implementação padrão sem filtros específicos
+	query := `
+		SELECT id, session_id, message_id, type, direction, status,
+			   from_jid, to_jid, content, media_id, caption,
+			   timestamp, reply_to_id, metadata, created_at, updated_at
+		FROM zapcore_messages
+		ORDER BY timestamp DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50 // Limite padrão
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, limit, filters.Offset)
+	if err != nil {
+		r.logger.Error().Err(err).Msg("Erro ao listar mensagens")
+		return nil, fmt.Errorf("erro ao listar mensagens: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanMessages(rows)
+}
+
+// GetBySessionID retorna mensagens de uma sessão específica
+func (r *MessageRepository) GetBySessionID(ctx context.Context, sessionID uuid.UUID, filters message.ListFilters) ([]*message.Message, error) {
+	return r.ListBySessionID(ctx, sessionID, filters.Limit, filters.Offset)
+}
+
+// GetConversation retorna mensagens de uma conversa específica
+func (r *MessageRepository) GetConversation(ctx context.Context, sessionID uuid.UUID, jid string, filters message.ListFilters) ([]*message.Message, error) {
+	return r.ListByChatJID(ctx, sessionID, jid, filters.Limit, filters.Offset)
+}
+
+// GetPendingMessages retorna mensagens pendentes para reenvio
+func (r *MessageRepository) GetPendingMessages(ctx context.Context, sessionID uuid.UUID) ([]*message.Message, error) {
+	query := `
+		SELECT id, session_id, message_id, type, direction, status,
+			   from_jid, to_jid, content, media_id, caption,
+			   timestamp, reply_to_id, metadata, created_at, updated_at
+		FROM zapcore_messages
+		WHERE session_id = $1 AND status = $2
+		ORDER BY timestamp ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, sessionID, message.MessageStatusPending)
+	if err != nil {
+		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao buscar mensagens pendentes")
+		return nil, fmt.Errorf("erro ao buscar mensagens pendentes: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanMessages(rows)
 }
 
 // scanMessage converte uma linha do banco em uma entidade Message

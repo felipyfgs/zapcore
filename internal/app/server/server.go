@@ -15,6 +15,7 @@ import (
 	"zapcore/internal/infra/database"
 	"zapcore/internal/infra/repository"
 	"zapcore/internal/infra/whatsapp"
+	"zapcore/internal/usecases/message"
 	"zapcore/internal/usecases/session"
 	"zapcore/pkg/logger"
 
@@ -23,11 +24,12 @@ import (
 
 // Server representa o servidor HTTP da aplicação
 type Server struct {
-	config       *config.Config
-	httpServer   *http.Server
-	logger       *logger.Logger
-	db           *database.DB
-	storeManager *whatsapp.StoreManager
+	config         *config.Config
+	httpServer     *http.Server
+	logger         *logger.Logger
+	db             *database.DB
+	storeManager   *whatsapp.StoreManager
+	whatsappClient *whatsapp.WhatsAppClient // Singleton instance
 }
 
 // New cria uma nova instância do servidor
@@ -66,11 +68,17 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("erro ao inicializar store manager do WhatsApp: %w", err)
 	}
 
+	// Criar repositórios e cliente WhatsApp (singleton)
+	sessionRepo := repository.NewSessionRepository(db.GetDB(), appLogger.GetZerolog())
+	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, appLogger.GetZerolog())
+	whatsappClient := whatsapp.NewWhatsAppClient(storeManager.GetContainer(), sessionRepo, appLogger.GetZerolog(), eventHandler)
+
 	server := &Server{
-		config:       cfg,
-		logger:       appLogger,
-		db:           db,
-		storeManager: storeManager,
+		config:         cfg,
+		logger:         appLogger,
+		db:             db,
+		storeManager:   storeManager,
+		whatsappClient: whatsappClient,
 	}
 
 	// Configurar rotas
@@ -88,25 +96,27 @@ func New(cfg *config.Config) (*Server, error) {
 	return server, nil
 }
 
-
-
 // setupRoutes configura todas as rotas da aplicação
 func (s *Server) setupRoutes() *gin.Engine {
-	// Criar repositórios
+	// Usar repositórios já criados
 	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger.GetZerolog())
 
-	// Criar event handler para WhatsApp
-	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger.GetZerolog())
+	// Usar cliente WhatsApp singleton
+	whatsappClient := s.whatsappClient
 
-	// Criar cliente WhatsApp
-	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger.GetZerolog(), eventHandler)
+	// Criar repositórios de mensagem
+	messageRepo := repository.NewMessageRepository(s.db.GetDB(), s.logger.GetZerolog())
 
-	// Criar use cases
+	// Criar use cases de sessão
 	createUseCase := session.NewCreateUseCase(sessionRepo, s.logger.GetZerolog())
 	connectUseCase := session.NewConnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
 	disconnectUseCase := session.NewDisconnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
 	listUseCase := session.NewListUseCase(sessionRepo, s.logger.GetZerolog())
 	getStatusUseCase := session.NewGetStatusUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
+
+	// Criar use cases de mensagem
+	sendTextUseCase := message.NewSendTextUseCase(messageRepo, sessionRepo, whatsappClient, s.logger.GetZerolog())
+	sendMediaUseCase := message.NewSendMediaUseCase(messageRepo, sessionRepo, whatsappClient, s.logger.GetZerolog())
 
 	// Criar handlers
 	healthHandler := handlers.NewHealthHandler(s.logger.GetZerolog(), "1.0.0")
@@ -116,6 +126,11 @@ func (s *Server) setupRoutes() *gin.Engine {
 		disconnectUseCase,
 		listUseCase,
 		getStatusUseCase,
+		s.logger.GetZerolog(),
+	)
+	messageHandler := handlers.NewMessageHandler(
+		sendTextUseCase,
+		sendMediaUseCase,
 		s.logger.GetZerolog(),
 	)
 
@@ -131,7 +146,7 @@ func (s *Server) setupRoutes() *gin.Engine {
 	}
 
 	// Criar router com todos os handlers
-	r := router.NewRouter(routerConfig, sessionHandler, healthHandler)
+	r := router.NewRouter(routerConfig, sessionHandler, messageHandler, healthHandler)
 	return r.Setup()
 }
 
@@ -248,12 +263,7 @@ func (s *Server) GetDB() *database.DB {
 
 // connectActiveSessionsOnStartup reconecta sessões ativas automaticamente
 func (s *Server) connectActiveSessionsOnStartup() error {
-	// Criar repositórios e cliente WhatsApp
-	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger.GetZerolog())
-	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, s.logger.GetZerolog())
-	whatsappClient := whatsapp.NewWhatsAppClient(s.storeManager.GetContainer(), sessionRepo, s.logger.GetZerolog(), eventHandler)
-
-	// Chamar ConnectOnStartup
+	// Usar cliente WhatsApp singleton
 	ctx := context.Background()
-	return whatsappClient.ConnectOnStartup(ctx)
+	return s.whatsappClient.ConnectOnStartup(ctx)
 }

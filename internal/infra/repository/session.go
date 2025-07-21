@@ -274,7 +274,7 @@ func (r *SessionRepository) UpdateStatus(ctx context.Context, sessionID uuid.UUI
 
 // UpdateLastSeen atualiza o último acesso de uma sessão
 func (r *SessionRepository) UpdateLastSeen(ctx context.Context, id uuid.UUID) error {
-	query := "UPDATE sessions SET last_seen = $2, updated_at = $3 WHERE id = $1"
+	query := "UPDATE zapcore_sessions SET last_seen = $2, updated_at = $3 WHERE id = $1"
 
 	now := time.Now()
 	result, err := r.db.ExecContext(ctx, query, id, now, now)

@@ -25,22 +25,22 @@ type Config struct {
 type Router struct {
 	config         Config
 	sessionHandler *handlers.SessionHandler
-	// messageHandler *handlers.MessageHandler // TODO: Implementar
-	healthHandler *handlers.HealthHandler
+	messageHandler *handlers.MessageHandler
+	healthHandler  *handlers.HealthHandler
 }
 
 // NewRouter cria uma nova instância do router
 func NewRouter(
 	config Config,
 	sessionHandler *handlers.SessionHandler,
-	// messageHandler *handlers.MessageHandler, // TODO: Implementar
+	messageHandler *handlers.MessageHandler,
 	healthHandler *handlers.HealthHandler,
 ) *Router {
 	return &Router{
 		config:         config,
 		sessionHandler: sessionHandler,
-		// messageHandler: messageHandler, // TODO: Implementar
-		healthHandler: healthHandler,
+		messageHandler: messageHandler,
+		healthHandler:  healthHandler,
 	}
 }
 
@@ -120,8 +120,8 @@ func (r *Router) setupProtectedRoutes(engine *gin.Engine) {
 	// Rotas de sessões
 	r.setupSessionRoutes(protected)
 
-	// Rotas de mensagens - TODO: Implementar
-	// r.setupMessageRoutes(protected)
+	// Rotas de mensagens
+	r.setupMessageRoutes(protected)
 }
 
 // setupSessionRoutes configura as rotas de sessões
@@ -151,29 +151,38 @@ func (r *Router) setupSessionRoutes(group *gin.RouterGroup) {
 
 // setupMessageRoutes configura as rotas de mensagens
 func (r *Router) setupMessageRoutes(group *gin.RouterGroup) {
-	// TODO: Implementar MessageHandler e rotas de mensagens
-	
-	// Exemplo de rotas que serão implementadas:
-	// messages := group.Group("/messages")
-	// sessionMessages := messages.Group("/:sessionID/send")
-	// sessionMessages.POST("/text", r.messageHandler.SendText)
-	// sessionMessages.POST("/media", r.messageHandler.SendMedia)
-	// sessionMessages.POST("/image", r.messageHandler.SendImage)
-	// sessionMessages.POST("/audio", r.messageHandler.SendAudio)
-	// sessionMessages.POST("/video", r.messageHandler.SendVideo)
-	// sessionMessages.POST("/document", r.messageHandler.SendDocument)
-	// sessionMessages.POST("/sticker", r.messageHandler.SendSticker)
-	// sessionMessages.POST("/location", r.messageHandler.SendLocation)
-	// sessionMessages.POST("/contact", r.messageHandler.SendContact)
-	// sessionMessages.POST("/buttons", r.messageHandler.SendButtons)
-	// sessionMessages.POST("/list", r.messageHandler.SendList)
-	// sessionMessages.POST("/poll", r.messageHandler.SendPoll)
-	// sessionMessages.PUT("/edit", r.messageHandler.EditMessage)
-	
-	// Gerenciamento de mensagens:
-	// sessionMessages.GET("/messages", r.messageHandler.GetMessages)
-	// sessionMessages.GET("/messages/:messageID", r.messageHandler.GetMessage)
-	// sessionMessages.POST("/messages/:messageID/read", r.messageHandler.MarkAsRead)
+	r.config.Logger.Debug().Msg("Configurando rotas de mensagens")
+
+	messages := group.Group("/messages")
+	{
+		// Rotas de envio de mensagens por sessão
+		sessionMessages := messages.Group("/:sessionID/send")
+		{
+			// Mensagem de texto
+			r.config.Logger.Debug().Msg("Registrando rota POST /messages/:sessionID/send/text")
+			sessionMessages.POST("/text", r.messageHandler.SendText)
+
+			// Envio de mídia
+			sessionMessages.POST("/image", r.messageHandler.SendImage)
+			sessionMessages.POST("/video", r.messageHandler.SendVideo)
+			sessionMessages.POST("/audio", r.messageHandler.SendAudio)
+			sessionMessages.POST("/document", r.messageHandler.SendDocument)
+			sessionMessages.POST("/sticker", r.messageHandler.SendSticker)
+
+			// TODO: Implementar outros tipos de mensagem
+			// sessionMessages.POST("/location", r.messageHandler.SendLocation)
+			// sessionMessages.POST("/contact", r.messageHandler.SendContact)
+			// sessionMessages.POST("/buttons", r.messageHandler.SendButtons)
+			// sessionMessages.POST("/list", r.messageHandler.SendList)
+			// sessionMessages.POST("/poll", r.messageHandler.SendPoll)
+		}
+
+		// TODO: Implementar gerenciamento de mensagens
+		// sessionMessages.GET("/", r.messageHandler.GetMessages)
+		// sessionMessages.GET("/:messageID", r.messageHandler.GetMessage)
+		// sessionMessages.POST("/:messageID/read", r.messageHandler.MarkAsRead)
+		// sessionMessages.PUT("/:messageID/edit", r.messageHandler.EditMessage)
+	}
 }
 
 // parseDuration converte string de duração para time.Duration

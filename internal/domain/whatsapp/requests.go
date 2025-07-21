@@ -58,6 +58,7 @@ type SendDocumentRequest struct {
 	DocumentData io.Reader `json:"-"`
 	DocumentURL  string    `json:"document_url,omitempty"`
 	FileName     string    `json:"file_name" validate:"required"`
+	Caption      string    `json:"caption,omitempty"`
 	ReplyToID    string    `json:"reply_to_id,omitempty"`
 	MimeType     string    `json:"mime_type,omitempty"`
 }
