@@ -1,16 +1,31 @@
-# ZapCore WhatsApp API - Documentação Completa
+# 📱 ZapCore WhatsApp API - Documentação Completa
+
+API REST completa para integração com WhatsApp usando a biblioteca whatsmeow com suporte a múltiplas sessões e envio de mídia.
+
+## 🚀 Funcionalidades
+
+- ✅ **Mensagens de Texto** - Envio simples e com reply
+- ✅ **Documentos** - PDF, DOC, XLSX, etc. com caption
+- ✅ **Imagens** - JPG, PNG, GIF, etc. com caption
+- ✅ **Vídeos** - MP4, AVI, MOV, etc. com caption
+- ✅ **Áudios** - MP3, WAV, OGG, etc.
+- ✅ **Múltiplos Formatos** - Arquivo local, URL pública, base64
+- ✅ **Auto-detecção** - MIME type automático por extensão
+- ✅ **Validações** - Entrada robusta e tratamento de erros
+- ✅ **Logs Detalhados** - Debug completo para desenvolvimento
 
 ## 📋 Índice
-- [Visão Geral](#visão-geral)
-- [Autenticação](#autenticação)
-- [Gerenciamento de Sessões](#gerenciamento-de-sessões)
-- [Envio de Mensagens](#envio-de-mensagens)
-- [Códigos de Status](#códigos-de-status)
-- [Exemplos Práticos](#exemplos-práticos)
+- [🚀 Visão Geral](#-visão-geral)
+- [🔐 Autenticação](#-autenticação)
+- [📱 Gerenciamento de Sessões](#-gerenciamento-de-sessões)
+- [💬 Mensagens de Texto](#-mensagens-de-texto)
+- [📎 Envio de Mídia](#-envio-de-mídia)
+- [⚠️ Códigos de Status](#️-códigos-de-status)
+- [💡 Exemplos Práticos](#-exemplos-práticos)
 
 ## 🚀 Visão Geral
 
-A ZapCore WhatsApp API é uma API REST completa para integração com WhatsApp usando o protocolo Multi-Device. Permite gerenciar múltiplas sessões e enviar diversos tipos de mensagens.
+A ZapCore WhatsApp API é uma solução completa para integração com WhatsApp usando o protocolo Multi-Device. Permite gerenciar múltiplas sessões simultaneamente e enviar diversos tipos de mensagens e mídias.
 
 **Base URL:** `http://localhost:8080`
 
@@ -65,9 +80,9 @@ curl -X GET "http://localhost:8080/sessions/{sessionID}/qr" \
   -H "X-API-Key: your-api-key-for-authentication"
 ```
 
-## 💬 Envio de Mensagens
+## 💬 Mensagens de Texto
 
-### Mensagem de Texto
+### Envio de Texto Simples
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
   -H "Content-Type: application/json" \
@@ -79,104 +94,42 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
   }'
 ```
 
-### Envio de Imagem
-
-**Padrão 1: Via Base64**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "base64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ...",
-    "caption": "Legenda da imagem",
-    "replyId": "optional_message_id"
-  }'
+**Resposta de Sucesso:**
+```json
+{
+  "whatsapp_id": "3EB0123456789ABCDEF",
+  "status": "sent",
+  "timestamp": "2025-07-20T21:00:00Z",
+  "message": "Mensagem enviada com sucesso"
+}
 ```
 
-**Padrão 2: Via URL**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "url": "https://exemplo.com/imagem.jpg",
-    "caption": "Legenda da imagem",
-    "replyId": "optional_message_id"
-  }'
-```
+## 📎 Envio de Mídia
 
-### Envio de Áudio
+A API suporte **3 formatos diferentes** para envio de mídia:
+- 📁 **Arquivo Local**: `"file": "assets/documento.pdf"`
+- 🌐 **URL Pública**: `"url": "https://exemplo.com/arquivo.jpg"`
+- 📋 **Base64**: `"base64": "data:mime/type;base64,string..."`
 
-**Padrão 1: Via Base64**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "base64": "data:audio/mpeg;base64,SUQzAwAAAAAfdlBSSVYAAAAOAAABWE1QMwAAAAAAAAA...",
-    "replyId": "optional_message_id"
-  }'
-```
+> ⚠️ **Importante**: Use apenas **um** formato por requisição.
 
-**Padrão 2: Via URL**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "url": "https://exemplo.com/audio.mp3",
-    "replyId": "optional_message_id"
-  }'
-```
+### 📄 Documentos
 
-### Envio de Vídeo
+Suporte para PDF, DOC, XLSX, TXT, etc. com caption opcional.
 
-**Padrão 1: Via Base64**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "base64": "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE...",
-    "caption": "Legenda do vídeo",
-    "replyId": "optional_message_id"
-  }'
-```
-
-**Padrão 2: Via URL**
-```bash
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "url": "https://exemplo.com/video.mp4",
-    "caption": "Legenda do vídeo",
-    "replyId": "optional_message_id"
-  }'
-```
-
-### Envio de Documento
-
-**Padrão 1: Via Base64**
+**📁 Via Arquivo Local:**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
   -d '{
     "to": "5511999999999@s.whatsapp.net",
-    "base64": "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO8CjIgMCBvYmoKPDwKL0xlbmd0aCA...",
-    "caption": "Descrição do documento",
-    "replyId": "optional_message_id"
+    "file": "assets/document.pdf",
+    "caption": "📄 Documento importante anexado!"
   }'
 ```
 
-**Padrão 2: Via URL**
+**🌐 Via URL Pública:**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
   -H "Content-Type: application/json" \
@@ -184,363 +137,301 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
   -d '{
     "to": "5511999999999@s.whatsapp.net",
     "url": "https://exemplo.com/documento.pdf",
-    "caption": "Descrição do documento",
-    "replyId": "optional_message_id"
+    "caption": "📄 Documento via URL"
   }'
 ```
 
-### Envio de Sticker
+**📋 Via Base64:**
 ```bash
-# Via arquivo local
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/sticker" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=5511999999999@s.whatsapp.net" \
-  -F "sticker_file=@/caminho/para/sticker.webp" \
-  -F "reply_to_id=optional_message_id"
-
-# Via URL pública
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/sticker" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=5511999999999@s.whatsapp.net" \
-  -F "sticker_url=https://exemplo.com/sticker.webp" \
-  -F "reply_to_id=optional_message_id"
-
-# Via Base64
-curl -X POST "http://localhost:8080/messages/{sessionID}/send/sticker" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=5511999999999@s.whatsapp.net" \
-  -F "sticker_base64=data:image/webp;base64,UklGRnoAAABXRUJQVlA4WAoAAAAQAAAAAAAAAAAAQUxQSAwAAAARBxAR..." \
-  -F "reply_to_id=optional_message_id"
-```
-
-## 📊 Códigos de Status
-
-| Código | Descrição |
-|--------|-----------|
-| 200 | Sucesso |
-| 400 | Requisição inválida |
-| 401 | Não autorizado |
-| 404 | Recurso não encontrado |
-| 500 | Erro interno do servidor |
-
-## 🎯 Exemplos Práticos
-
-### Exemplo 1: Fluxo Completo de Nova Sessão
-```bash
-# 1. Criar sessão
-SESSION_RESPONSE=$(curl -s -X POST "http://localhost:8080/sessions/add" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{"name": "Bot Vendas", "description": "Bot para atendimento"}')
-
-# 2. Extrair ID da sessão
-SESSION_ID=$(echo $SESSION_RESPONSE | jq -r '.id')
-
-# 3. Conectar sessão
-curl -X POST "http://localhost:8080/sessions/$SESSION_ID/connect" \
-  -H "X-API-Key: your-api-key-for-authentication"
-
-# 4. Obter QR Code
-curl -X GET "http://localhost:8080/sessions/$SESSION_ID/qr" \
-  -H "X-API-Key: your-api-key-for-authentication"
-
-# 5. Após escanear QR, enviar mensagem
-curl -X POST "http://localhost:8080/messages/$SESSION_ID/send/text" \
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
   -d '{
-    "to_jid": "5511999999999@s.whatsapp.net",
-    "content": "🎉 Sessão conectada com sucesso!"
+    "to": "5511999999999@s.whatsapp.net",
+    "base64": "data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwo...",
+    "caption": "📄 Documento via base64"
   }'
 ```
 
-### Exemplo 2: Envio de Mídia com Arquivos Locais
+### 🖼️ Imagens
+
+Suporte para JPG, PNG, GIF, WEBP, etc. com caption opcional.
+
+**📁 Via Arquivo Local:**
 ```bash
-# Definir variáveis
-SESSION_ID="1fd8bd19-d74e-41a0-bd7a-f984469fe6ea"
-RECIPIENT="5511999999999@s.whatsapp.net"
-
-# Enviar documento PDF
-curl -X POST "http://localhost:8080/messages/$SESSION_ID/send/document" \
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
+  -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=$RECIPIENT" \
-  -F "document_file=@assets/document.pdf" \
-  -F "caption=📄 Relatório mensal"
-
-# Enviar imagem
-curl -X POST "http://localhost:8080/messages/$SESSION_ID/send/image" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=$RECIPIENT" \
-  -F "image_file=@assets/image.png" \
-  -F "caption=🖼️ Captura de tela"
-
-# Enviar vídeo
-curl -X POST "http://localhost:8080/messages/$SESSION_ID/send/video" \
-  -H "X-API-Key: your-api-key-for-authentication" \
-  -F "to_jid=$RECIPIENT" \
-  -F "video_file=@assets/video.mp4" \
-  -F "caption=🎬 Demonstração do produto"
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "file": "assets/image.png",
+    "caption": "🖼️ Imagem local com caption!"
+  }'
 ```
 
-### Exemplo 3: Envio em Lote
+**🌐 Via URL Pública:**
 ```bash
-# Script para envio em lote
-SESSION_ID="1fd8bd19-d74e-41a0-bd7a-f984469fe6ea"
-
-# Lista de destinatários
-RECIPIENTS=(
-  "5511999999999@s.whatsapp.net"
-  "5511888888888@s.whatsapp.net"
-  "5511777777777@s.whatsapp.net"
-)
-
-# Enviar para todos
-for recipient in "${RECIPIENTS[@]}"; do
-  curl -X POST "http://localhost:8080/messages/$SESSION_ID/send/text" \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: your-api-key-for-authentication" \
-    -d "{
-      \"to_jid\": \"$recipient\",
-      \"content\": \"🚀 Mensagem promocional para todos!\"
-    }"
-  sleep 2  # Aguardar 2 segundos entre envios
-done
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "url": "https://exemplo.com/imagem.jpg",
+    "caption": "🖼️ Imagem via URL"
+  }'
 ```
 
-## 📋 Tipos MIME Suportados
-
-### Imagens
-- `image/jpeg`, `image/jpg`
-- `image/png`
-- `image/gif`
-- `image/webp`
-
-### Vídeos
-- `video/mp4`
-- `video/avi`
-- `video/mov`
-- `video/mkv`
-- `video/webm`
-
-### Áudios
-- `audio/mpeg`, `audio/mp3`
-- `audio/wav`
-- `audio/ogg`
-- `audio/aac`
-- `audio/m4a`
-
-### Documentos
-- `application/pdf`
-- `application/msword`
-- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-- `application/vnd.ms-excel`
-- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-- `text/plain`
-- `application/zip`
-- `application/rar`
-
-### Stickers
-- `image/webp`
-- `image/png`
-
-## 🔧 Parâmetros Padronizados
-
-### Para Mensagens de Texto
-| Parâmetro | Tipo | Descrição |
-|-----------|------|-----------|
-| `to_jid` | string | **Obrigatório.** JID do destinatário |
-| `content` | string | **Obrigatório.** Conteúdo da mensagem |
-| `reply_to_id` | string | Opcional. ID da mensagem sendo respondida |
-
-### Para Mensagens de Mídia
-
-#### 📁 Arquivo Local
-| Parâmetro | Formato | Exemplo |
-|-----------|---------|---------|
-| `image_file` | `@caminho/arquivo` | `@assets/image.png` |
-| `audio_file` | `@caminho/arquivo` | `@assets/audio.mp3` |
-| `video_file` | `@caminho/arquivo` | `@assets/video.mp4` |
-| `document_file` | `@caminho/arquivo` | `@assets/document.pdf` |
-| `sticker_file` | `@caminho/arquivo` | `@assets/sticker.webp` |
-
-#### 🌐 URL Pública
-| Parâmetro | Formato | Exemplo |
-|-----------|---------|---------|
-| `url` | `https://...` | `https://exemplo.com/arquivo.jpg` |
-
-#### 📋 Base64
-| Parâmetro | Formato | Exemplo |
-|-----------|---------|---------|
-| `image:` | `{tipo}:{base64_string}` | `image:iVBORw0KGgoAAAANSUhEUgAA...` |
-| `audio:` | `{tipo}:{base64_string}` | `audio:SUQzAwAAAAAfdlBSSVYA...` |
-| `video:` | `{tipo}:{base64_string}` | `video:AAAAIGZ0eXBpc29tAAA...` |
-| `document:` | `{tipo}:{base64_string}` | `document:JVBERi0xLjQKJcOkw7...` |
-| `sticker:` | `{tipo}:{base64_string}` | `sticker:UklGRnoAAABXRUJQVl...` |
-
-#### 📝 Parâmetros Opcionais
-| Parâmetro | Tipo | Descrição |
-|-----------|------|-----------|
-| `caption` | string | Opcional. Legenda da mídia |
-| `reply_to_id` | string | Opcional. ID da mensagem sendo respondida |
-| `file_name` | string | Opcional. Nome personalizado do arquivo |
-| `mime_type` | string | Opcional. Tipo MIME personalizado |
-
-## 📱 Formato do JID
-
-O JID (Jabber ID) é o identificador único do destinatário no WhatsApp:
-
-### Para Contatos Individuais
+**📋 Via Base64:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "base64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ...",
+    "caption": "🖼️ Imagem via base64"
+  }'
 ```
-{número_com_código_país}@s.whatsapp.net
-```
-**Exemplos:**
-- Brasil: `5511999999999@s.whatsapp.net`
-- EUA: `1234567890@s.whatsapp.net`
-- Argentina: `5491123456789@s.whatsapp.net`
 
-### Para Grupos
-```
-{id_do_grupo}@g.us
-```
-**Exemplo:**
-- `120363025246125486@g.us`
+### 🎥 Vídeos
 
-## 🔄 Respostas da API
+Suporte para MP4, AVI, MOV, MKV, etc. com caption opcional.
 
-### Resposta de Sucesso (Texto)
+**📁 Via Arquivo Local:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "file": "assets/video.mp4",
+    "caption": "🎥 Vídeo local com caption!"
+  }'
+```
+
+**🌐 Via URL Pública:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "url": "https://exemplo.com/video.mp4",
+    "caption": "🎥 Vídeo via URL"
+  }'
+```
+
+**📋 Via Base64:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "base64": "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE...",
+    "caption": "🎥 Vídeo via base64"
+  }'
+```
+
+### 🎵 Áudios
+
+Suporte para MP3, WAV, OGG, AAC, etc.
+
+**📁 Via Arquivo Local:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "file": "assets/audio.mp3"
+  }'
+```
+
+**🌐 Via URL Pública:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "url": "https://exemplo.com/audio.mp3"
+  }'
+```
+
+**📋 Via Base64:**
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "base64": "data:audio/mpeg;base64,SUQzAwAAAAAfdlBSSVYAAAAOAAABWE1QMwAAAAAAAAA..."
+  }'
+```
+
+## ⚠️ Códigos de Status
+
+### Respostas de Sucesso
+
+**200 OK** - Mídia enviada com sucesso
 ```json
 {
-  "whatsapp_id": "3EB078C20421B3046EA341",
+  "whatsapp_id": "3EB06B4F968EC808B5C54E",
   "status": "sent",
-  "timestamp": "2025-07-20T20:08:31-03:00"
+  "timestamp": "2025-07-20T21:00:27-03:00",
+  "message": "Mídia enviada com sucesso"
 }
 ```
 
-### Resposta de Sucesso (Mídia)
+### Códigos de Erro
+
+| Código | Descrição | Solução |
+|--------|-----------|---------|
+| **400** | Dados inválidos | Verificar formato JSON e campos obrigatórios |
+| **401** | API Key inválida | Verificar header `X-API-Key` |
+| **404** | Sessão não encontrada | Verificar se sessionID existe |
+| **503** | Erro no WhatsApp | Verificar conexão da sessão |
+
+### Exemplos de Erro
+
+**400 - Validação falhou:**
 ```json
 {
-  "whatsapp_id": "3EB0F68233FDD15A7D7467",
-  "status": "sent",
-  "timestamp": "2025-07-20T20:13:22-03:00"
+  "error": "validação de documento falhou: tipo MIME não especificado",
+  "code": 400
 }
 ```
 
-### Resposta de Erro
+**401 - Não autorizado:**
 ```json
 {
-  "error": "ID da sessão inválido",
-  "message": "O ID da sessão deve ser um UUID válido"
+  "error": "API Key inválida",
+  "code": 401
 }
 ```
 
-## 🚨 Tratamento de Erros
-
-### Erros Comuns
-
-#### 400 - Bad Request
+**503 - Serviço indisponível:**
 ```json
 {
-  "error": "JID do destinatário obrigatório",
-  "message": "O campo to_jid é obrigatório"
+  "error": "erro ao enviar mídia",
+  "code": 503
 }
 ```
 
-#### 401 - Unauthorized
-```json
-{
-  "error": "Não autorizado",
-  "message": "API Key inválida ou ausente"
-}
-```
+## 💡 Exemplos Práticos
 
-#### 404 - Not Found
-```json
-{
-  "error": "Sessão não encontrada",
-  "message": "A sessão especificada não existe"
-}
-```
-
-#### 500 - Internal Server Error
-```json
-{
-  "error": "Erro interno do servidor",
-  "message": "Cliente não está conectado para sessão"
-}
-```
-
-## 🔍 Monitoramento e Logs
-
-### Health Check
+### Cenário 1: Envio de Relatório PDF
 ```bash
-# Verificar se a API está funcionando
-curl -X GET "http://localhost:8080/health"
-
-# Resposta esperada
-{
-  "status": "ok",
-  "timestamp": "2025-07-20T20:00:00Z"
-}
+# Enviar relatório mensal via arquivo local
+curl -X POST "http://localhost:8080/messages/1fd8bd19-d74e-41a0-bd7a-f984469fe6ea/send/document" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "file": "assets/relatorio-mensal.pdf",
+    "caption": "📊 Relatório mensal de vendas - Janeiro 2025"
+  }'
 ```
 
-### Status da Aplicação
+### Cenário 2: Compartilhar Imagem de Produto
 ```bash
-# Verificar status detalhado
-curl -X GET "http://localhost:8080/ready"
-
-# Informações da API
-curl -X GET "http://localhost:8080/"
+# Enviar foto de produto via URL
+curl -X POST "http://localhost:8080/messages/1fd8bd19-d74e-41a0-bd7a-f984469fe6ea/send/image" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "url": "https://loja.com/produtos/smartphone-x1.jpg",
+    "caption": "📱 Novo Smartphone X1 - Disponível por R$ 1.299,00"
+  }'
 ```
 
-## 🛠️ Configuração e Deployment
+### Cenário 3: Envio de Vídeo Promocional
+```bash
+# Enviar vídeo promocional via base64
+curl -X POST "http://localhost:8080/messages/1fd8bd19-d74e-41a0-bd7a-f984469fe6ea/send/video" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "base64": "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE...",
+    "caption": "🎥 Confira nosso novo produto em ação!"
+  }'
+```
+
+## 🔧 Configuração
 
 ### Variáveis de Ambiente
 ```bash
-# Configurações básicas
-export DB_HOST=localhost
-export DB_PORT=5432
-export DB_NAME=zapcore
-export DB_USER=postgres
-export DB_PASSWORD=password
-
-# Configurações da API
-export API_KEY=your-api-key-for-authentication
-export SERVER_PORT=8080
-export LOG_LEVEL=info
-
-# Configurações de upload
-export UPLOAD_MAX_SIZE=10MB
-export UPLOAD_ALLOWED_TYPES=image/jpeg,image/png,video/mp4,audio/mpeg
+# .env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=zapcore
+DB_USER=postgres
+DB_PASSWORD=password
+API_KEY=your-api-key-for-authentication
+LOG_LEVEL=debug
 ```
 
-### Docker
-```bash
-# Build da imagem
-docker build -t zapcore .
-
-# Executar container
-docker run -d \
-  --name zapcore-api \
-  -p 8080:8080 \
-  -e DB_HOST=postgres \
-  -e API_KEY=your-api-key \
-  zapcore
+### Estrutura de Arquivos
+```
+zapcore/
+├── assets/           # Arquivos de mídia para teste
+│   ├── document.pdf
+│   ├── image.png
+│   └── video.mp4
+├── logs/            # Logs da aplicação
+└── internal/        # Código fonte
 ```
 
-## 📞 Suporte e Contribuição
+### Formatos Suportados
 
-### Reportar Problemas
-- Verifique os logs da aplicação
-- Inclua o `whatsapp_id` da mensagem com problema
-- Forneça o payload da requisição
-
-### Contribuir
-1. Fork do repositório
-2. Criar branch para feature
-3. Implementar testes
-4. Submeter Pull Request
+| Tipo | Extensões | MIME Types |
+|------|-----------|------------|
+| **Documentos** | pdf, doc, docx, xls, xlsx, ppt, pptx, txt | application/pdf, application/msword, etc. |
+| **Imagens** | jpg, jpeg, png, gif, webp, bmp | image/jpeg, image/png, image/gif, etc. |
+| **Vídeos** | mp4, avi, mov, mkv, webm | video/mp4, video/avi, video/quicktime, etc. |
+| **Áudios** | mp3, wav, ogg, aac, m4a | audio/mpeg, audio/wav, audio/ogg, etc. |
 
 ---
 
-**ZapCore WhatsApp API v1.0.0**
-Desenvolvido com ❤️ em Go
+## 📞 Suporte
+
+Para dúvidas ou problemas:
+- 📧 Email: suporte@zapcore.com
+- 📱 WhatsApp: +55 11 99999-9999
+- 🐛 Issues: GitHub Issues
+
+---
+
+## 🎯 Resumo Rápido
+
+### Texto
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -d '{"to_jid": "5511999999999@s.whatsapp.net", "content": "Olá!"}'
+```
+
+### Mídia (3 formatos)
+```bash
+# Arquivo local
+{"to": "5511999999999@s.whatsapp.net", "file": "assets/document.pdf", "caption": "Legenda"}
+
+# URL pública
+{"to": "5511999999999@s.whatsapp.net", "url": "https://exemplo.com/arquivo.jpg", "caption": "Legenda"}
+
+# Base64
+{"to": "5511999999999@s.whatsapp.net", "base64": "data:image/jpeg;base64,/9j/4AAQ...", "caption": "Legenda"}
+```
+
+### Endpoints
+- `/messages/{sessionID}/send/text` - Texto
+- `/messages/{sessionID}/send/document` - PDF, DOC, etc.
+- `/messages/{sessionID}/send/image` - JPG, PNG, etc.
+- `/messages/{sessionID}/send/video` - MP4, AVI, etc.
+- `/messages/{sessionID}/send/audio` - MP3, WAV, etc.
+
+**Versão:** v1.0.0 | **Atualização:** 2025-07-20
