@@ -1,114 +1,169 @@
+# 📱 ZapCore - WhatsApp API
 
-# ZapCore - WhatsApp API
+Uma API REST moderna e robusta para integração com WhatsApp usando Clean Architecture em Go.
 
-API REST para integração com WhatsApp usando Clean Architecture em Go.
+## ✨ Características
+
+- 🚀 **Clean Architecture** - Código organizado e manutenível
+- 📱 **WhatsApp Multi-Device** - Protocolo oficial do WhatsApp
+- 🔄 **Múltiplas Sessões** - Gerencie várias contas simultaneamente
+- 📎 **Envio de Mídia** - Suporte completo para documentos, imagens, vídeos e áudios
+- 🔐 **Autenticação** - API Key para segurança
+- 📊 **Logs Detalhados** - Monitoramento completo
+- 🐳 **Docker Ready** - Containerização incluída
 
 ## 🚀 Funcionalidades
 
-### Gerenciamento de Sessões
-- ✅ Criar nova sessão
-- ✅ Listar sessões ativas
-- ✅ Conectar/desconectar sessão
-- ✅ Obter status da sessão
+### 📞 Gerenciamento de Sessões
+- ✅ Criar e gerenciar sessões
+- ✅ Conectar/desconectar WhatsApp
 - ✅ Gerar QR Code para autenticação
-- ✅ Emparelhar telefone
-- ✅ Configurar proxy
+- ✅ Verificar status de conexão
+- ✅ Listar sessões ativas
 
-### Envio de Mensagens
-- ✅ Mensagens de texto
-- ✅ Imagens, áudios, vídeos
-- ✅ Documentos e stickers
-- ✅ Localização e contatos
-- ✅ Botões interativos
-- ✅ Listas interativas
-- ✅ Enquetes
-- ✅ Edição de mensagens
+### 💬 Envio de Mensagens
+- ✅ **Texto** - Mensagens simples e com reply
+- ✅ **Documentos** - PDF, DOC, XLSX, etc.
+- ✅ **Imagens** - JPG, PNG, GIF, etc.
+- ✅ **Vídeos** - MP4, AVI, MOV, etc.
+- ✅ **Áudios** - MP3, WAV, OGG, etc.
 
-## 🏗️ Arquitetura
-
-Projeto estruturado seguindo **Clean Architecture**:
-
-```
-├── internal/
-│   ├── domain/          # Entidades e regras de negócio
-│   ├── usecases/        # Casos de uso
-│   ├── infra/           # Implementações externas
-│   ├── interfaces/      # Controllers HTTP
-│   └── app/             # Configuração da aplicação
-└── pkg/                 # Bibliotecas públicas
-```
+### 📤 Formatos de Envio
+- 📁 **Upload direto** - Form-data multipart
+- 🌐 **URL pública** - Links externos
+- 📋 **Base64** - Dados codificados
 
 ## 🛠️ Tecnologias
 
-- **Go 1.21+**
+- **Go 1.23+** - Linguagem principal
 - **Gin** - Framework HTTP
-- **PostgreSQL** - Banco de dados
-- **WhatsApp Web Multi-Device** - Protocolo WhatsApp
+- **Bun ORM** - Banco de dados
+- **PostgreSQL** - Armazenamento
+- **WhatsApp Multi-Device** - Protocolo oficial
+- **MinIO** - Storage de mídia
 - **Docker** - Containerização
 
 ## 📋 Pré-requisitos
 
-- Go 1.21+
+- Go 1.23 ou superior
 - PostgreSQL 13+
-- Docker (opcional)
+- Docker e Docker Compose (opcional)
 
 ## 🚀 Instalação
 
-1. Clone o repositório:
+### 1. Clone o repositório
 ```bash
-git clone https://github.com/felipe/zapcore.git
+git clone https://github.com/felipyfgs/zapcore.git
 cd zapcore
 ```
 
-2. Configure as variáveis de ambiente:
+### 2. Configure as variáveis de ambiente
 ```bash
 cp .env.example .env
 # Edite o arquivo .env com suas configurações
 ```
 
-3. Execute as migrações do banco:
+### 3. Execute com Docker (Recomendado)
 ```bash
-go run cmd/migrate/main.go up
+docker-compose up -d
 ```
 
-4. Inicie a aplicação:
+### 4. Ou execute manualmente
 ```bash
+# Instale as dependências
+go mod download
+
+# Execute a aplicação
 go run cmd/server/main.go
 ```
 
-## 📚 Documentação da API
+## 📚 Uso Rápido
 
-### Sessões
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/sessions/add` | Criar nova sessão |
-| GET | `/sessions/list` | Listar sessões |
-| GET | `/sessions/{id}` | Obter sessão |
-| DELETE | `/sessions/{id}` | Remover sessão |
-| POST | `/sessions/{id}/connect` | Conectar sessão |
-| POST | `/sessions/{id}/logout` | Desconectar sessão |
-| GET | `/sessions/{id}/status` | Status da sessão |
-| GET | `/sessions/{id}/qr` | Gerar QR Code |
-
-### Mensagens
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/messages/{sessionID}/send/text` | Enviar texto |
-| POST | `/messages/{sessionID}/send/image` | Enviar imagem |
-| POST | `/messages/{sessionID}/send/audio` | Enviar áudio |
-| POST | `/messages/{sessionID}/send/video` | Enviar vídeo |
-| POST | `/messages/{sessionID}/send/document` | Enviar documento |
-
-## 🐳 Docker
-
+### Criar uma sessão
 ```bash
-# Build da imagem
-docker build -t zapcore .
+curl -X POST "http://localhost:8080/sessions" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{"name": "Minha Sessão"}'
+```
 
-# Executar com docker-compose
-docker-compose up -d
+### Enviar mensagem de texto
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "to": "5511999999999@s.whatsapp.net",
+    "text": "Olá! Esta é uma mensagem de teste."
+  }'
+```
+
+### Enviar imagem
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
+  -H "X-API-Key: your-api-key" \
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "caption=🖼️ Imagem de exemplo" \
+  -F "media=@/caminho/para/imagem.jpg"
+```
+
+## 📖 Documentação Completa
+
+Para documentação detalhada da API, consulte:
+- 📄 [API.md](API.md) - Documentação completa dos endpoints
+- 🌐 **Swagger** - `http://localhost:8080/docs` (quando rodando)
+
+## 🏗️ Arquitetura
+
+```
+zapcore/
+├── cmd/                    # Pontos de entrada da aplicação
+│   └── server/            # Servidor HTTP
+├── internal/              # Código interno da aplicação
+│   ├── app/              # Configuração da aplicação
+│   ├── domain/           # Entidades e regras de negócio
+│   │   ├── chat/         # Domínio de chats
+│   │   ├── contact/      # Domínio de contatos
+│   │   ├── message/      # Domínio de mensagens
+│   │   ├── session/      # Domínio de sessões
+│   │   └── webhook/      # Domínio de webhooks
+│   ├── http/             # Camada HTTP
+│   │   ├── handlers/     # Controladores
+│   │   ├── middleware/   # Middlewares
+│   │   └── router/       # Roteamento
+│   ├── infra/            # Infraestrutura
+│   │   ├── database/     # Banco de dados
+│   │   ├── repository/   # Repositórios
+│   │   ├── storage/      # Armazenamento
+│   │   └── whatsapp/     # Cliente WhatsApp
+│   ├── shared/           # Código compartilhado
+│   └── usecases/         # Casos de uso
+├── pkg/                   # Bibliotecas públicas
+└── assets/               # Arquivos de exemplo
+```
+
+## 🔧 Configuração
+
+### Variáveis de Ambiente
+```env
+# Banco de dados
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=zapcore
+DB_USER=postgres
+DB_PASSWORD=password
+
+# API
+API_KEY=your-api-key-for-authentication
+PORT=8080
+
+# Storage (MinIO)
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+
+# Logs
+LOG_LEVEL=info
 ```
 
 ## 🧪 Testes
@@ -117,10 +172,77 @@ docker-compose up -d
 # Executar todos os testes
 go test ./...
 
-# Executar testes com coverage
+# Testes com coverage
 go test -cover ./...
+
+# Testes verbosos
+go test -v ./...
 ```
 
-## 📄 Licença
+## 🐳 Docker
+
+### Desenvolvimento
+```bash
+# Subir todos os serviços
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f zapcore
+
+# Parar serviços
+docker-compose down
+```
+
+### Produção
+```bash
+# Build da imagem
+docker build -t zapcore:latest .
+
+# Executar
+docker run -d \
+  --name zapcore \
+  -p 8080:8080 \
+  --env-file .env \
+  zapcore:latest
+```
+
+## 📊 Monitoramento
+
+### Health Check
+```bash
+curl http://localhost:8080/health
+```
+
+### Logs
+```bash
+# Docker
+docker-compose logs -f zapcore
+
+# Local
+tail -f logs/app.log
+```
+
+## 🤝 Contribuição
+
+1. Faça um fork do projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
+
+## 📝 Licença
 
 Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## 📞 Suporte
+
+- 🐛 **Issues**: [GitHub Issues](https://github.com/felipyfgs/zapcore/issues)
+- 📧 **Email**: suporte@zapcore.com
+- 📖 **Documentação**: [API.md](API.md)
+
+---
+
+<div align="center">
+  <p>Feito com ❤️ em Go</p>
+  <p>⭐ Se este projeto te ajudou, considere dar uma estrela!</p>
+</div>

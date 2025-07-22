@@ -31,6 +31,7 @@ vendor/
 .env.local
 .env.production
 .env.staging
+forge.yaml
 
 # Logs e arquivos de logging dual
 *.log
@@ -95,3 +96,20 @@ docs/generated/
 # Arquivos de configuração local
 config.local.yaml
 config.local.json
+# Arquivos de debug do Go
+__debug_bin*
+*.debug
+
+# Arquivos de cache do Go
+*.sum.lock
+
+# Arquivos de storage local (MinIO/S3)
+storage/
+data/
+
+# Arquivos de QR Code gerados
+qr_*.png
+*.qr
+
+# Air (live reload) para desenvolvimento
+.air.toml
