@@ -10,37 +10,37 @@ type MediaErrorCode string
 
 const (
 	// Erros de validação
-	ErrCodeInvalidMediaType   MediaErrorCode = "INVALID_MEDIA_TYPE"
-	ErrCodeUnsupportedFormat  MediaErrorCode = "UNSUPPORTED_FORMAT"
-	ErrCodeFileTooLarge       MediaErrorCode = "FILE_TOO_LARGE"
-	ErrCodeFileEmpty          MediaErrorCode = "FILE_EMPTY"
-	ErrCodeInvalidMimeType    MediaErrorCode = "INVALID_MIME_TYPE"
-	
+	ErrCodeInvalidMediaType  MediaErrorCode = "INVALID_MEDIA_TYPE"
+	ErrCodeUnsupportedFormat MediaErrorCode = "UNSUPPORTED_FORMAT"
+	ErrCodeFileTooLarge      MediaErrorCode = "FILE_TOO_LARGE"
+	ErrCodeFileEmpty         MediaErrorCode = "FILE_EMPTY"
+	ErrCodeInvalidMimeType   MediaErrorCode = "INVALID_MIME_TYPE"
+
 	// Erros de URL
-	ErrCodeInvalidURL         MediaErrorCode = "INVALID_URL"
-	ErrCodeURLNotAccessible   MediaErrorCode = "URL_NOT_ACCESSIBLE"
-	ErrCodeDownloadFailed     MediaErrorCode = "DOWNLOAD_FAILED"
-	
+	ErrCodeInvalidURL       MediaErrorCode = "INVALID_URL"
+	ErrCodeURLNotAccessible MediaErrorCode = "URL_NOT_ACCESSIBLE"
+	ErrCodeDownloadFailed   MediaErrorCode = "DOWNLOAD_FAILED"
+
 	// Erros de base64
 	ErrCodeInvalidBase64      MediaErrorCode = "INVALID_BASE64"
 	ErrCodeBase64DecodeFailed MediaErrorCode = "BASE64_DECODE_FAILED"
-	
+
 	// Erros de upload
-	ErrCodeUploadFailed       MediaErrorCode = "UPLOAD_FAILED"
-	ErrCodeProcessingFailed   MediaErrorCode = "PROCESSING_FAILED"
-	
+	ErrCodeUploadFailed     MediaErrorCode = "UPLOAD_FAILED"
+	ErrCodeProcessingFailed MediaErrorCode = "PROCESSING_FAILED"
+
 	// Erros de sessão
-	ErrCodeSessionNotFound    MediaErrorCode = "SESSION_NOT_FOUND"
-	ErrCodeSessionNotActive   MediaErrorCode = "SESSION_NOT_ACTIVE"
+	ErrCodeSessionNotFound     MediaErrorCode = "SESSION_NOT_FOUND"
+	ErrCodeSessionNotActive    MediaErrorCode = "SESSION_NOT_ACTIVE"
 	ErrCodeSessionNotConnected MediaErrorCode = "SESSION_NOT_CONNECTED"
-	
+
 	// Erros de envio
-	ErrCodeSendFailed         MediaErrorCode = "SEND_FAILED"
-	ErrCodeWhatsAppError      MediaErrorCode = "WHATSAPP_ERROR"
-	
+	ErrCodeSendFailed    MediaErrorCode = "SEND_FAILED"
+	ErrCodeWhatsAppError MediaErrorCode = "WHATSAPP_ERROR"
+
 	// Erros internos
-	ErrCodeInternalError      MediaErrorCode = "INTERNAL_ERROR"
-	ErrCodeDatabaseError      MediaErrorCode = "DATABASE_ERROR"
+	ErrCodeInternalError MediaErrorCode = "INTERNAL_ERROR"
+	ErrCodeDatabaseError MediaErrorCode = "DATABASE_ERROR"
 )
 
 // MediaError representa um erro específico de mídia
@@ -70,12 +70,12 @@ func (e *MediaError) GetHTTPStatus() int {
 	if e.HTTPStatus != 0 {
 		return e.HTTPStatus
 	}
-	
+
 	// Status padrão baseado no código
 	switch e.Code {
 	case ErrCodeInvalidMediaType, ErrCodeUnsupportedFormat, ErrCodeFileTooLarge,
-		 ErrCodeFileEmpty, ErrCodeInvalidMimeType, ErrCodeInvalidURL,
-		 ErrCodeInvalidBase64, ErrCodeBase64DecodeFailed:
+		ErrCodeFileEmpty, ErrCodeInvalidMimeType, ErrCodeInvalidURL,
+		ErrCodeInvalidBase64, ErrCodeBase64DecodeFailed:
 		return http.StatusBadRequest
 	case ErrCodeSessionNotFound:
 		return http.StatusNotFound

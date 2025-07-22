@@ -47,4 +47,3 @@ type Service interface {
 	// SyncChats sincroniza chats com o WhatsApp
 	SyncChats(ctx context.Context, sessionID uuid.UUID) error
 }
-

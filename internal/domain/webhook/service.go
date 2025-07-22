@@ -60,15 +60,15 @@ type Repository interface {
 
 // ListFilters define os filtros para listagem de eventos
 type ListFilters struct {
-	SessionID  *uuid.UUID      `json:"session_id,omitempty"`
-	EventType  *EventType      `json:"event_type,omitempty"`
-	Status     *DeliveryStatus `json:"status,omitempty"`
-	DateFrom   *time.Time      `json:"date_from,omitempty"`
-	DateTo     *time.Time      `json:"date_to,omitempty"`
-	Limit      int             `json:"limit,omitempty"`
-	Offset     int             `json:"offset,omitempty"`
-	OrderBy    string          `json:"order_by,omitempty"`
-	OrderDir   string          `json:"order_dir,omitempty"`
+	SessionID *uuid.UUID      `json:"session_id,omitempty"`
+	EventType *EventType      `json:"event_type,omitempty"`
+	Status    *DeliveryStatus `json:"status,omitempty"`
+	DateFrom  *time.Time      `json:"date_from,omitempty"`
+	DateTo    *time.Time      `json:"date_to,omitempty"`
+	Limit     int             `json:"limit,omitempty"`
+	Offset    int             `json:"offset,omitempty"`
+	OrderBy   string          `json:"order_by,omitempty"`
+	OrderDir  string          `json:"order_dir,omitempty"`
 }
 
 // DefaultListFilters retorna os filtros padrão para listagem
@@ -76,7 +76,7 @@ func DefaultListFilters() ListFilters {
 	return ListFilters{
 		Limit:    50,
 		Offset:   0,
-		OrderBy:  "created_at",
+		OrderBy:  "createdAt",
 		OrderDir: "DESC",
 	}
 }
@@ -93,10 +93,10 @@ type DeliveryStats struct {
 
 // EventSubscription representa uma inscrição de eventos
 type EventSubscription struct {
-	SessionID uuid.UUID   `json:"session_id"`
+	SessionID uuid.UUID   `json:"sessionId"`
 	URL       string      `json:"url"`
 	Events    []EventType `json:"events"`
-	IsActive  bool        `json:"is_active"`
+	IsActive  bool        `json:"isActive"`
 }
 
 // NewEventSubscription cria uma nova inscrição de eventos
@@ -118,4 +118,3 @@ func (s *EventSubscription) IsSubscribedTo(eventType EventType) bool {
 	}
 	return false
 }
-

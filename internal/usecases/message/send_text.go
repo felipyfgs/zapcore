@@ -11,7 +11,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // SendTextUseCase representa o caso de uso para enviar mensagem de texto
@@ -27,19 +26,18 @@ func NewSendTextUseCase(
 	messageRepo message.Repository,
 	sessionRepo session.Repository,
 	whatsappClient whatsapp.Client,
-	zeroLogger zerolog.Logger,
 ) *SendTextUseCase {
 	return &SendTextUseCase{
 		messageRepo:    messageRepo,
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // SendTextRequest representa a requisição para enviar texto
 type SendTextRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	To        string    `json:"to" validate:"required"`
 	Text      string    `json:"text" validate:"required,min=1,max=4096"`
 	ReplyID   string    `json:"replyId,omitempty"`

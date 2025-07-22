@@ -9,19 +9,19 @@ import (
 
 // Erros específicos do domínio de sessão
 var (
-	ErrSessionNotFound      = errors.New("sessão não encontrada")
-	ErrSessionAlreadyExists = errors.New("sessão já existe")
-	ErrSessionNotActive     = errors.New("sessão não está ativa")
-	ErrSessionNotConnected  = errors.New("sessão não está conectada")
+	ErrSessionNotFound         = errors.New("sessão não encontrada")
+	ErrSessionAlreadyExists    = errors.New("sessão já existe")
+	ErrSessionNotActive        = errors.New("sessão não está ativa")
+	ErrSessionNotConnected     = errors.New("sessão não está conectada")
 	ErrSessionAlreadyConnected = errors.New("sessão já está conectada")
-	ErrSessionConnecting    = errors.New("sessão está em processo de conexão")
-	ErrInvalidSessionName   = errors.New("nome da sessão inválido")
-	ErrInvalidPhoneNumber   = errors.New("número de telefone inválido")
-	ErrInvalidProxyURL      = errors.New("URL do proxy inválida")
-	ErrInvalidWebhookURL    = errors.New("URL do webhook inválida")
-	ErrSessionTimeout       = errors.New("timeout na operação da sessão")
-	ErrQRCodeExpired        = errors.New("QR Code expirado")
-	ErrPairingFailed        = errors.New("falha no emparelhamento")
+	ErrSessionConnecting       = errors.New("sessão está em processo de conexão")
+	ErrInvalidSessionName      = errors.New("nome da sessão inválido")
+	ErrInvalidPhoneNumber      = errors.New("número de telefone inválido")
+	ErrInvalidProxyURL         = errors.New("URL do proxy inválida")
+	ErrInvalidWebhookURL       = errors.New("URL do webhook inválida")
+	ErrSessionTimeout          = errors.New("timeout na operação da sessão")
+	ErrQRCodeExpired           = errors.New("QR Code expirado")
+	ErrPairingFailed           = errors.New("falha no emparelhamento")
 )
 
 // SessionError representa um erro específico de sessão com contexto
@@ -91,4 +91,3 @@ func NewConnectionError(sessionID uuid.UUID, reason string, err error) *Connecti
 		Err:       err,
 	}
 }
-

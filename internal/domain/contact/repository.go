@@ -64,4 +64,3 @@ func DefaultListFilters() ListFilters {
 		OrderDir: "ASC",
 	}
 }
-

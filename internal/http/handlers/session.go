@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // Regex para validação de nomes de sessão
@@ -33,7 +32,6 @@ func NewSessionHandler(
 	disconnectUseCase *session.DisconnectUseCase,
 	listUseCase *session.ListUseCase,
 	getStatusUseCase *session.GetStatusUseCase,
-	zeroLogger zerolog.Logger,
 ) *SessionHandler {
 	return &SessionHandler{
 		createUseCase:     createUseCase,
@@ -41,7 +39,7 @@ func NewSessionHandler(
 		disconnectUseCase: disconnectUseCase,
 		listUseCase:       listUseCase,
 		getStatusUseCase:  getStatusUseCase,
-		logger:            logger.NewFromZerolog(zeroLogger),
+		logger:            logger.Get(),
 	}
 }
 
@@ -131,7 +129,7 @@ func (h *SessionHandler) Create(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param status query string false "Filtrar por status"
-// @Param is_active query bool false "Filtrar por ativo"
+// @Param isActive query bool false "Filtrar por ativo"
 // @Param limit query int false "Limite de resultados"
 // @Param offset query int false "Offset para paginação"
 // @Success 200 {object} session.ListResponse

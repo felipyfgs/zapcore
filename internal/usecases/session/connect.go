@@ -9,7 +9,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // ConnectUseCase representa o caso de uso para conectar sessão
@@ -20,22 +19,22 @@ type ConnectUseCase struct {
 }
 
 // NewConnectUseCase cria uma nova instância do caso de uso
-func NewConnectUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client, zeroLogger zerolog.Logger) *ConnectUseCase {
+func NewConnectUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client) *ConnectUseCase {
 	return &ConnectUseCase{
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // ConnectRequest representa a requisição para conectar sessão
 type ConnectRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 }
 
 // ConnectResponse representa a resposta da conexão de sessão
 type ConnectResponse struct {
-	SessionID uuid.UUID                     `json:"session_id"`
+	SessionID uuid.UUID                     `json:"sessionId"`
 	Status    session.WhatsAppSessionStatus `json:"status"`
 	QRCode    string                        `json:"qr_code,omitempty"`
 	Message   string                        `json:"message"`

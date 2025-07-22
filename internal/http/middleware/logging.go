@@ -2,22 +2,22 @@ package middleware
 
 import (
 	"time"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // LoggingConfig representa a configuração do middleware de logging
 type LoggingConfig struct {
-	Logger     zerolog.Logger
+	Logger     *logger.Logger
 	SkipPaths  []string
 	TimeFormat string
 }
 
 // DefaultLoggingConfig retorna a configuração padrão do logging
-func DefaultLoggingConfig(logger zerolog.Logger) LoggingConfig {
+func DefaultLoggingConfig() LoggingConfig {
 	return LoggingConfig{
-		Logger:     logger,
+		Logger:     logger.Get(),
 		SkipPaths:  []string{"/health", "/ready", "/live"},
 		TimeFormat: time.RFC3339,
 	}
@@ -44,55 +44,40 @@ func Logging(config LoggingConfig) gin.HandlerFunc {
 		// Calcular latência
 		latency := time.Since(start)
 
-		// Preparar campos do log
-		fields := map[string]interface{}{
-			"method":     c.Request.Method,
-			"path":       path,
-			"status":     c.Writer.Status(),
-			"latency":    latency.String(),
-			"ip":         c.ClientIP(),
-			"user_agent": c.Request.UserAgent(),
-			"timestamp":  start.Format(config.TimeFormat),
-		}
-
-		// Adicionar query parameters se existirem
-		if c.Request.URL.RawQuery != "" {
-			fields["query"] = c.Request.URL.RawQuery
-		}
-
-		// Adicionar tamanho da resposta
-		fields["response_size"] = c.Writer.Size()
-
-		// Adicionar erro se existir
-		if len(c.Errors) > 0 {
-			fields["errors"] = c.Errors.String()
-		}
-
 		// Log baseado no status code
 		status := c.Writer.Status()
 
-		// Preparar log event
-		var event *zerolog.Event
-		switch {
-		case status >= 500:
-			event = config.Logger.Error()
-		case status >= 400:
-			event = config.Logger.Warn()
-		default:
-			event = config.Logger.Info()
+		// Preparar log event usando o logger centralizado
+		logEvent := config.Logger.WithFields(map[string]interface{}{
+			"method":        c.Request.Method,
+			"path":          path,
+			"status":        status,
+			"latency":       latency.String(),
+			"ip":            c.ClientIP(),
+			"user_agent":    c.Request.UserAgent(),
+			"timestamp":     start.Format(config.TimeFormat),
+			"response_size": c.Writer.Size(),
+		})
+
+		// Adicionar query parameters se existirem
+		if c.Request.URL.RawQuery != "" {
+			logEvent = logEvent.WithField("query", c.Request.URL.RawQuery)
 		}
 
-		// Adicionar campos e enviar log
-		event.
-			Str("method", c.Request.Method).
-			Str("path", path).
-			Int("status", status).
-			Dur("latency", latency).
-			Str("ip", c.ClientIP()).
-			Str("user_agent", c.Request.UserAgent()).
-			Time("timestamp", start).
-			Int("response_size", c.Writer.Size()).
-			Msg("HTTP Request")
+		// Adicionar erro se existir
+		if len(c.Errors) > 0 {
+			logEvent = logEvent.WithField("errors", c.Errors.String())
+		}
+
+		// Log baseado no status code
+		switch {
+		case status >= 500:
+			logEvent.Error().Msg("HTTP Request")
+		case status >= 400:
+			logEvent.Warn().Msg("HTTP Request")
+		default:
+			logEvent.Info().Msg("HTTP Request")
+		}
 	}
 }
 
@@ -125,4 +110,3 @@ func randomString(length int) string {
 	}
 	return string(b)
 }
-

@@ -7,7 +7,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // HealthHandler gerencia as requisições de health check
@@ -18,9 +17,9 @@ type HealthHandler struct {
 }
 
 // NewHealthHandler cria uma nova instância do handler
-func NewHealthHandler(zeroLogger zerolog.Logger, version string) *HealthHandler {
+func NewHealthHandler(version string) *HealthHandler {
 	return &HealthHandler{
-		logger:    logger.NewFromZerolog(zeroLogger),
+		logger:    logger.Get(),
 		startTime: time.Now(),
 		version:   version,
 	}
@@ -87,4 +86,3 @@ func (h *HealthHandler) Live(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
-

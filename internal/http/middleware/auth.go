@@ -3,9 +3,9 @@ package middleware
 import (
 	"net/http"
 	"strings"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // AuthConfig representa a configuração do middleware de autenticação
@@ -14,17 +14,17 @@ type AuthConfig struct {
 	HeaderName string
 	QueryParam string
 	SkipPaths  []string
-	Logger     zerolog.Logger
+	Logger     *logger.Logger
 }
 
 // DefaultAuthConfig retorna a configuração padrão de autenticação
-func DefaultAuthConfig(apiKey string, logger zerolog.Logger) AuthConfig {
+func DefaultAuthConfig(apiKey string) AuthConfig {
 	return AuthConfig{
 		APIKey:     apiKey,
 		HeaderName: "Authorization",
 		QueryParam: "api_key",
 		SkipPaths:  []string{"/health", "/ready", "/live"},
-		Logger:     logger,
+		Logger:     logger.Get(),
 	}
 }
 

@@ -33,15 +33,15 @@ type Service interface {
 
 // SendMediaRequest representa uma requisição de envio de mídia
 type SendMediaRequest struct {
-	SessionID uuid.UUID     `json:"session_id"`
-	ToJID     string        `json:"to_jid"`
-	Type      MessageType   `json:"type"`
-	MediaData io.Reader     `json:"-"`
-	MediaURL  string        `json:"media_url,omitempty"`
-	Caption   string        `json:"caption,omitempty"`
-	FileName  string        `json:"file_name,omitempty"`
-	MimeType  string        `json:"mime_type,omitempty"`
-	ReplyToID string        `json:"reply_to_id,omitempty"`
+	SessionID uuid.UUID   `json:"sessionId"`
+	ToJID     string      `json:"to_jid"`
+	Type      MessageType `json:"type"`
+	MediaData io.Reader   `json:"-"`
+	MediaURL  string      `json:"media_url,omitempty"`
+	Caption   string      `json:"caption,omitempty"`
+	FileName  string      `json:"file_name,omitempty"`
+	MimeType  string      `json:"mime_type,omitempty"`
+	ReplyToID string      `json:"reply_to_id,omitempty"`
 }
 
 // MediaManager define a interface para gerenciamento de mídia
@@ -70,6 +70,5 @@ type MediaInfo struct {
 	Size      int64     `json:"size"`
 	URL       string    `json:"url,omitempty"`
 	Thumbnail string    `json:"thumbnail,omitempty"`
-	CreatedAt string    `json:"created_at"`
+	CreatedAt string    `json:"createdAt"`
 }
-

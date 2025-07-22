@@ -9,7 +9,6 @@ import (
 	"zapcore/pkg/logger"
 
 	_ "github.com/lib/pq"
-	"github.com/rs/zerolog"
 )
 
 // Config representa a configuração do banco de dados
@@ -33,7 +32,7 @@ type DB struct {
 }
 
 // NewDB cria uma nova conexão com o banco de dados
-func NewDB(config *Config, zeroLogger zerolog.Logger) (*DB, error) {
+func NewDB(config *Config) (*DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		config.Host,
@@ -68,7 +67,7 @@ func NewDB(config *Config, zeroLogger zerolog.Logger) (*DB, error) {
 	return &DB{
 		db:     db,
 		config: config,
-		logger: logger.NewFromZerolog(zeroLogger),
+		logger: logger.Get(),
 	}, nil
 }
 
@@ -101,26 +100,6 @@ func (d *DB) Stats() sql.DBStats {
 // BeginTx inicia uma transação
 func (d *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	return d.db.BeginTx(ctx, opts)
-}
-
-// ExecContext executa uma query sem retorno
-func (d *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	return d.db.ExecContext(ctx, query, args...)
-}
-
-// QueryContext executa uma query com retorno
-func (d *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	return d.db.QueryContext(ctx, query, args...)
-}
-
-// QueryRowContext executa uma query que retorna uma única linha
-func (d *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	return d.db.QueryRowContext(ctx, query, args...)
-}
-
-// PrepareContext prepara uma statement
-func (d *DB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	return d.db.PrepareContext(ctx, query)
 }
 
 // GetConfig retorna a configuração do banco

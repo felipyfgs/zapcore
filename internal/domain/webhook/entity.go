@@ -34,21 +34,21 @@ const (
 
 // WebhookEvent representa um evento de webhook
 type WebhookEvent struct {
-	ID             uuid.UUID              `json:"id"`
-	SessionID      uuid.UUID              `json:"session_id"`
-	EventType      EventType              `json:"event_type"`
+	ID             uuid.UUID      `json:"id"`
+	SessionID      uuid.UUID      `json:"sessionId"`
+	EventType      EventType      `json:"event_type"`
 	Payload        map[string]any `json:"payload"`
-	URL            string                 `json:"url"`
-	Status         DeliveryStatus         `json:"status"`
-	Attempts       int                    `json:"attempts"`
-	MaxAttempts    int                    `json:"max_attempts"`
-	NextRetryAt    *time.Time             `json:"next_retry_at,omitempty"`
-	LastError      string                 `json:"last_error,omitempty"`
-	ResponseStatus int                    `json:"response_status,omitempty"`
-	ResponseBody   string                 `json:"response_body,omitempty"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	DeliveredAt    *time.Time             `json:"delivered_at,omitempty"`
+	URL            string         `json:"url"`
+	Status         DeliveryStatus `json:"status"`
+	Attempts       int            `json:"attempts"`
+	MaxAttempts    int            `json:"max_attempts"`
+	NextRetryAt    *time.Time     `json:"next_retry_at,omitempty"`
+	LastError      string         `json:"last_error,omitempty"`
+	ResponseStatus int            `json:"response_status,omitempty"`
+	ResponseBody   string         `json:"response_body,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DeliveredAt    *time.Time     `json:"delivered_at,omitempty"`
 }
 
 // NewWebhookEvent cria uma nova instância de WebhookEvent
@@ -103,8 +103,8 @@ func (w *WebhookEvent) ScheduleRetry(retryDelay time.Duration) {
 
 // CanRetry verifica se o evento pode ser reenviado
 func (w *WebhookEvent) CanRetry() bool {
-	return w.Attempts < w.MaxAttempts && 
-		   (w.Status == DeliveryStatusPending || w.Status == DeliveryStatusRetry)
+	return w.Attempts < w.MaxAttempts &&
+		(w.Status == DeliveryStatusPending || w.Status == DeliveryStatusRetry)
 }
 
 // IsReadyForRetry verifica se está pronto para nova tentativa
@@ -139,4 +139,3 @@ func (w *WebhookEvent) GetRetryDelay() time.Duration {
 	}
 	return time.Duration(multiplier) * baseDelay
 }
-

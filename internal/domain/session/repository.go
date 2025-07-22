@@ -34,16 +34,19 @@ type Repository interface {
 
 	// UpdateLastSeen atualiza o último acesso de uma sessão
 	UpdateLastSeen(ctx context.Context, id uuid.UUID) error
+
+	// UpdateJID atualiza o JID de uma sessão após pareamento bem-sucedido
+	UpdateJID(ctx context.Context, id uuid.UUID, jid string) error
 }
 
 // ListFilters define os filtros para listagem de sessões
 type ListFilters struct {
 	Status   *WhatsAppSessionStatus `json:"status,omitempty"`
-	IsActive *bool                  `json:"is_active,omitempty"`
+	IsActive *bool                  `json:"isActive,omitempty"`
 	Limit    int                    `json:"limit,omitempty"`
 	Offset   int                    `json:"offset,omitempty"`
-	OrderBy  string                 `json:"order_by,omitempty"`
-	OrderDir string                 `json:"order_dir,omitempty"`
+	OrderBy  string                 `json:"orderBy,omitempty"`
+	OrderDir string                 `json:"orderDir,omitempty"`
 }
 
 // DefaultListFilters retorna os filtros padrão para listagem
@@ -51,8 +54,7 @@ func DefaultListFilters() ListFilters {
 	return ListFilters{
 		Limit:    50,
 		Offset:   0,
-		OrderBy:  "created_at",
+		OrderBy:  "createdAt",
 		OrderDir: "DESC",
 	}
 }
-

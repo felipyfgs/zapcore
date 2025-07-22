@@ -4,23 +4,26 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/uptrace/bun"
 )
 
 // Contact representa um contato do WhatsApp
 type Contact struct {
-	ID           uuid.UUID              `json:"id"`
-	SessionID    uuid.UUID              `json:"session_id"`
-	JID          string                 `json:"jid"`
-	Name         string                 `json:"name,omitempty"`
-	PushName     string                 `json:"push_name,omitempty"`
-	BusinessName string                 `json:"business_name,omitempty"`
-	AvatarURL    string                 `json:"avatar_url,omitempty"`
-	IsBusiness   bool                   `json:"is_business"`
-	IsGroup      bool                   `json:"is_group"`
-	LastSeen     *time.Time             `json:"last_seen,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	bun.BaseModel `bun:"table:zapcore_contacts,alias:ct"`
+
+	ID           uuid.UUID      `bun:"id,pk,type:uuid" json:"id"`
+	SessionID    uuid.UUID      `bun:"sessionId,type:uuid,notnull" json:"sessionId"`
+	JID          string         `bun:"jid,type:varchar(100),notnull" json:"jid"`
+	Name         string         `bun:"-" json:"name,omitempty"` // Não existe na migration atual
+	PushName     string         `bun:"pushName,type:varchar(255)" json:"pushName,omitempty"`
+	BusinessName string         `bun:"businessName,type:varchar(255)" json:"businessName,omitempty"`
+	AvatarURL    string         `bun:"avatarUrl,type:varchar(500)" json:"avatarUrl,omitempty"`
+	IsBusiness   bool           `bun:"-" json:"isBusiness"` // Não existe na migration atual
+	IsGroup      bool           `bun:"isGroup,type:boolean" json:"isGroup"`
+	LastSeen     *time.Time     `bun:"lastSeen,type:timestamptz" json:"lastSeen,omitempty"`
+	Metadata     map[string]any `bun:"metadata,type:jsonb" json:"metadata,omitempty"`
+	CreatedAt    time.Time      `bun:"createdAt,type:timestamptz,notnull" json:"createdAt"`
+	UpdatedAt    time.Time      `bun:"updatedAt,type:timestamptz,notnull" json:"updatedAt"`
 }
 
 // NewContact cria uma nova instância de Contact
@@ -120,4 +123,3 @@ func (c *Contact) IsOnline() bool {
 	// Considera online se visto nos últimos 5 minutos
 	return time.Since(*c.LastSeen) < 5*time.Minute
 }
-

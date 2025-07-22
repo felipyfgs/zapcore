@@ -41,18 +41,17 @@ Todas as rotas protegidas requerem autenticação via API Key no header:
 
 ### Criar Nova Sessão
 ```bash
-curl -X POST "http://localhost:8080/sessions/add" \
+curl -X POST "http://localhost:8080/sessions" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
   -d '{
-    "name": "Minha Sessão",
-    "description": "Sessão para testes"
+    "name": "Minha Sessão"
   }'
 ```
 
 ### Listar Sessões
 ```bash
-curl -X GET "http://localhost:8080/sessions/list" \
+curl -X GET "http://localhost:8080/sessions" \
   -H "X-API-Key: your-api-key-for-authentication"
 ```
 
@@ -107,27 +106,45 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/text" \
 ## 📎 Envio de Mídia
 
 A API suporte **3 formatos diferentes** para envio de mídia:
-- 📁 **Arquivo Local**: `"file": "assets/documento.pdf"`
+- 📤 **Form-data (Upload)**: Upload direto de arquivos via multipart/form-data
 - 🌐 **URL Pública**: `"url": "https://exemplo.com/arquivo.jpg"`
 - 📋 **Base64**: `"base64": "data:mime/type;base64,string..."`
 
 > ⚠️ **Importante**: Use apenas **um** formato por requisição.
 
+### 📤 Upload via Form-data (Recomendado)
+
+O método mais simples e eficiente para envio de arquivos é via form-data multipart:
+
+```bash
+curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
+  -H "X-API-Key: your-api-key-for-authentication" \
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "caption=🖼️ Imagem enviada via upload!" \
+  -F "media=@/caminho/para/sua/imagem.jpg"
+```
+
+**Vantagens do Form-data:**
+- ✅ Não precisa codificar em base64
+- ✅ Mais eficiente para arquivos grandes
+- ✅ Suporte nativo em navegadores e ferramentas
+- ✅ Detecção automática do tipo MIME
+- ✅ Mais seguro que caminhos de arquivo
+
 ### 📄 Documentos
 
 Suporte para PDF, DOC, XLSX, TXT, etc. com caption opcional.
 
-**📁 Via Arquivo Local:**
+**📤 Via Form-data (Upload):**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
-  -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "file": "assets/document.pdf",
-    "caption": "📄 Documento importante anexado!"
-  }'
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "caption=📄 Documento importante anexado!" \
+  -F "media=@/caminho/para/documento.pdf"
 ```
+
+
 
 **🌐 Via URL Pública:**
 ```bash
@@ -157,17 +174,16 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/document" \
 
 Suporte para JPG, PNG, GIF, WEBP, etc. com caption opcional.
 
-**📁 Via Arquivo Local:**
+**📤 Via Form-data (Upload):**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
-  -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "file": "assets/image.png",
-    "caption": "🖼️ Imagem local com caption!"
-  }'
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "caption=🖼️ Imagem enviada via upload!" \
+  -F "media=@/caminho/para/imagem.jpg"
 ```
+
+
 
 **🌐 Via URL Pública:**
 ```bash
@@ -197,17 +213,16 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/image" \
 
 Suporte para MP4, AVI, MOV, MKV, etc. com caption opcional.
 
-**📁 Via Arquivo Local:**
+**📤 Via Form-data (Upload):**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
-  -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "file": "assets/video.mp4",
-    "caption": "🎥 Vídeo local com caption!"
-  }'
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "caption=🎥 Vídeo enviado via upload!" \
+  -F "media=@/caminho/para/video.mp4"
 ```
+
+
 
 **🌐 Via URL Pública:**
 ```bash
@@ -237,16 +252,15 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/video" \
 
 Suporte para MP3, WAV, OGG, AAC, etc.
 
-**📁 Via Arquivo Local:**
+**📤 Via Form-data (Upload):**
 ```bash
 curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
-  -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key-for-authentication" \
-  -d '{
-    "to": "5511999999999@s.whatsapp.net",
-    "file": "assets/audio.mp3"
-  }'
+  -F "to=5511999999999@s.whatsapp.net" \
+  -F "media=@/caminho/para/audio.mp3"
 ```
+
+
 
 **🌐 Via URL Pública:**
 ```bash
@@ -283,6 +297,22 @@ curl -X POST "http://localhost:8080/messages/{sessionID}/send/audio" \
   "message": "Mídia enviada com sucesso"
 }
 ```
+
+## 📋 Resumo dos Métodos de Envio
+
+### Comparação dos Métodos
+
+| Método | Uso Recomendado | Vantagens | Desvantagens |
+|--------|-----------------|-----------|--------------|
+| **📤 Form-data** | Upload direto de arquivos | ✅ Simples<br>✅ Eficiente<br>✅ Suporte nativo<br>✅ Seguro | ❌ Requer acesso ao arquivo |
+| **🌐 URL Pública** | Arquivos online | ✅ Flexível<br>✅ Sem armazenamento | ❌ Requer URL acessível<br>❌ Dependência externa |
+| **📋 Base64** | Integração com apps | ✅ Dados inline<br>✅ Sem dependências | ❌ Tamanho maior<br>❌ Processamento extra |
+
+### Validações Aplicadas
+
+- **Form-data**: Validação de arquivo, tamanho e tipo MIME
+- **URL Pública**: Validação de protocolo HTTP/HTTPS e acessibilidade
+- **Base64**: Validação de formato e decodificação
 
 ### Códigos de Erro
 

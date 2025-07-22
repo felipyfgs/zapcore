@@ -9,7 +9,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // GetStatusUseCase representa o caso de uso para obter status da sessão
@@ -20,32 +19,32 @@ type GetStatusUseCase struct {
 }
 
 // NewGetStatusUseCase cria uma nova instância do caso de uso
-func NewGetStatusUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client, zeroLogger zerolog.Logger) *GetStatusUseCase {
+func NewGetStatusUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client) *GetStatusUseCase {
 	return &GetStatusUseCase{
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // GetStatusRequest representa a requisição para obter status
 type GetStatusRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 }
 
 // GetStatusResponse representa a resposta do status da sessão
 type GetStatusResponse struct {
-	SessionID   uuid.UUID                     `json:"session_id"`
+	SessionID   uuid.UUID                     `json:"sessionId"`
 	Name        string                        `json:"name"`
 	Status      session.WhatsAppSessionStatus `json:"status"`
 	JID         string                        `json:"jid,omitempty"`
-	IsActive    bool                          `json:"is_active"`
+	IsActive    bool                          `json:"isActive"`
 	LastSeen    string                        `json:"last_seen,omitempty"`
 	QRCode      string                        `json:"qr_code,omitempty"`
 	IsConnected bool                          `json:"is_connected"`
 	CanConnect  bool                          `json:"can_connect"`
-	CreatedAt   string                        `json:"created_at"`
-	UpdatedAt   string                        `json:"updated_at"`
+	CreatedAt   string                        `json:"createdAt"`
+	UpdatedAt   string                        `json:"updatedAt"`
 }
 
 // Execute executa o caso de uso de obtenção de status

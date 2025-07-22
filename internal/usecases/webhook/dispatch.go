@@ -22,18 +22,17 @@ type DispatchUseCase struct {
 func NewDispatchUseCase(
 	webhookRepo webhook.Repository,
 	webhookService webhook.Service,
-	zeroLogger zerolog.Logger,
 ) *DispatchUseCase {
 	return &DispatchUseCase{
 		webhookRepo:    webhookRepo,
 		webhookService: webhookService,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // DispatchRequest representa a requisição para despachar webhook
 type DispatchRequest struct {
-	SessionID uuid.UUID         `json:"session_id" validate:"required"`
+	SessionID uuid.UUID         `json:"sessionId" validate:"required"`
 	EventType webhook.EventType `json:"event_type" validate:"required"`
 	URL       string            `json:"url" validate:"required,url"`
 	Payload   map[string]any    `json:"payload" validate:"required"`

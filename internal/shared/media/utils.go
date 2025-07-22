@@ -29,10 +29,26 @@ func DecodeBase64Media(base64Data string) ([]byte, string, error) {
 		mimeType = strings.Split(strings.TrimPrefix(header, "data:"), ";")[0]
 	}
 
+	// Se não conseguiu extrair MIME type do header, tentar detectar
+	if mimeType == "" {
+		// Tentar extrair diretamente do header
+		headerWithoutData := strings.TrimPrefix(header, "data:")
+		if idx := strings.Index(headerWithoutData, ";"); idx != -1 {
+			mimeType = headerWithoutData[:idx]
+		} else {
+			mimeType = headerWithoutData
+		}
+	}
+
 	// Decodificar base64
 	data, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, "", fmt.Errorf("erro ao decodificar base64: %w", err)
+	}
+
+	// Se ainda não temos MIME type, detectar dos dados
+	if mimeType == "" {
+		mimeType = DetectMimeType(data)
 	}
 
 	return data, mimeType, nil
@@ -65,10 +81,10 @@ func DetectMimeTypeFromReader(reader io.Reader) (string, io.Reader, error) {
 // ValidateImageFormat valida se os dados são de uma imagem válida
 func ValidateImageFormat(data []byte) error {
 	mimeType := DetectMimeType(data)
-	
+
 	validImageTypes := []string{
 		"image/jpeg",
-		"image/png", 
+		"image/png",
 		"image/gif",
 		"image/webp",
 	}
@@ -85,7 +101,7 @@ func ValidateImageFormat(data []byte) error {
 // ValidateVideoFormat valida se os dados são de um vídeo válido
 func ValidateVideoFormat(data []byte) error {
 	mimeType := DetectMimeType(data)
-	
+
 	validVideoTypes := []string{
 		"video/mp4",
 		"video/avi",
@@ -106,7 +122,7 @@ func ValidateVideoFormat(data []byte) error {
 // ValidateAudioFormat valida se os dados são de um áudio válido
 func ValidateAudioFormat(data []byte) error {
 	mimeType := DetectMimeType(data)
-	
+
 	validAudioTypes := []string{
 		"audio/mpeg",
 		"audio/wav",
@@ -162,7 +178,7 @@ func GetFileSizeFromReader(reader io.Reader) (int64, io.Reader, error) {
 	}
 
 	size := int64(len(data))
-	
+
 	// Criar um novo reader com os dados
 	newReader := bytes.NewReader(data)
 
@@ -216,16 +232,16 @@ func IsValidURL(urlStr string) bool {
 func SanitizeFileName(fileName string) string {
 	// Remover caracteres perigosos
 	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
-	
+
 	sanitized := fileName
 	for _, char := range invalidChars {
 		sanitized = strings.ReplaceAll(sanitized, char, "_")
 	}
-	
+
 	// Limitar tamanho
 	if len(sanitized) > 255 {
 		sanitized = sanitized[:255]
 	}
-	
+
 	return sanitized
 }

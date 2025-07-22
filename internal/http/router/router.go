@@ -5,14 +5,13 @@ import (
 
 	"zapcore/internal/http/handlers"
 	"zapcore/internal/http/middleware"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // Config representa a configuração do router
 type Config struct {
-	Logger          zerolog.Logger
 	APIKey          string
 	RateLimitReqs   int
 	RateLimitWindow string
@@ -73,7 +72,7 @@ func (r *Router) setupMiddlewares(engine *gin.Engine) {
 	engine.Use(middleware.RequestID())
 
 	// Logging middleware
-	loggingConfig := middleware.DefaultLoggingConfig(r.config.Logger)
+	loggingConfig := middleware.DefaultLoggingConfig()
 	engine.Use(middleware.Logging(loggingConfig))
 
 	// CORS middleware
@@ -89,7 +88,6 @@ func (r *Router) setupMiddlewares(engine *gin.Engine) {
 	rateLimitConfig := middleware.DefaultRateLimitConfig(
 		r.config.RateLimitReqs,
 		parseDuration(r.config.RateLimitWindow),
-		r.config.Logger,
 	)
 	engine.Use(middleware.RateLimit(rateLimitConfig))
 }
@@ -114,7 +112,7 @@ func (r *Router) setupPublicRoutes(engine *gin.Engine) {
 // setupProtectedRoutes configura as rotas protegidas
 func (r *Router) setupProtectedRoutes(engine *gin.Engine) {
 	// Middleware de autenticação para rotas protegidas
-	authConfig := middleware.DefaultAuthConfig(r.config.APIKey, r.config.Logger)
+	authConfig := middleware.DefaultAuthConfig(r.config.APIKey)
 	protected := engine.Group("/", middleware.APIKeyAuth(authConfig))
 
 	// Rotas de sessões
@@ -151,7 +149,7 @@ func (r *Router) setupSessionRoutes(group *gin.RouterGroup) {
 
 // setupMessageRoutes configura as rotas de mensagens
 func (r *Router) setupMessageRoutes(group *gin.RouterGroup) {
-	r.config.Logger.Debug().Msg("Configurando rotas de mensagens")
+	logger.Debug().Msg("Configurando rotas de mensagens")
 
 	messages := group.Group("/messages")
 	{
@@ -159,7 +157,7 @@ func (r *Router) setupMessageRoutes(group *gin.RouterGroup) {
 		sessionMessages := messages.Group("/:sessionID/send")
 		{
 			// Mensagem de texto
-			r.config.Logger.Debug().Msg("Registrando rota POST /messages/:sessionID/send/text")
+			logger.Debug().Msg("Registrando rota POST /messages/:sessionID/send/text")
 			sessionMessages.POST("/text", r.messageHandler.SendText)
 
 			// Envio de mídia

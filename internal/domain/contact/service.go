@@ -51,4 +51,3 @@ type ContactInfo struct {
 	IsBusiness   *bool  `json:"is_business,omitempty"`
 	IsGroup      *bool  `json:"is_group,omitempty"`
 }
-

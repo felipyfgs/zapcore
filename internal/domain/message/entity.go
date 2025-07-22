@@ -1,15 +1,18 @@
 package message
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/uptrace/bun"
 )
 
 // MessageType representa os tipos de mensagem suportados
 type MessageType string
 
 const (
+	// Tipos básicos de mensagem
 	MessageTypeText         MessageType = "textMessage"
 	MessageTypeImage        MessageType = "imageMessage"
 	MessageTypeVideo        MessageType = "videoMessage"
@@ -20,10 +23,35 @@ const (
 	MessageTypeLocation     MessageType = "locationMessage"
 	MessageTypeLiveLocation MessageType = "liveLocationMessage"
 	MessageTypeGif          MessageType = "gifMessage"
-	MessageTypePoll         MessageType = "pollMessage"
-	MessageTypeReaction     MessageType = "reactionMessage"
-	MessageTypeButtons      MessageType = "buttonsMessage"
-	MessageTypeList         MessageType = "listMessage"
+
+	// Tipos interativos
+	MessageTypePoll        MessageType = "pollMessage"
+	MessageTypePollUpdate  MessageType = "pollUpdateMessage"
+	MessageTypeReaction    MessageType = "reactionMessage"
+	MessageTypeButtons     MessageType = "buttonsMessage"
+	MessageTypeList        MessageType = "listMessage"
+	MessageTypeInteractive MessageType = "interactiveMessage"
+
+	// Tipos especiais
+	MessageTypeExtendedText MessageType = "extendedTextMessage"
+	MessageTypeQuoted       MessageType = "quotedMessage"
+	MessageTypeGroupInvite  MessageType = "groupInviteMessage"
+	MessageTypeProtocol     MessageType = "protocolMessage"
+	MessageTypeEphemeral    MessageType = "ephemeralMessage"
+	MessageTypeViewOnce     MessageType = "viewOnceMessage"
+
+	// Tipos de mídia especiais
+	MessageTypePtt MessageType = "pttMessage"
+
+	// Tipos mais recentes
+	MessageTypeNewsletterAdmin MessageType = "newsletterAdminInviteMessage"
+	MessageTypeCallLog         MessageType = "callLogMessage"
+	MessageTypeScheduledCall   MessageType = "scheduledCallCreationMessage"
+	MessageTypeEvent           MessageType = "eventMessage"
+	MessageTypePaymentInvite   MessageType = "paymentInviteMessage"
+
+	// Tipo desconhecido
+	MessageTypeUnknown MessageType = "unknownMessage"
 )
 
 // MessageDirection representa a direção da mensagem
@@ -47,37 +75,47 @@ const (
 
 // Message representa uma mensagem do WhatsApp
 type Message struct {
-	ID          uuid.UUID        `json:"id"`
-	SessionID   uuid.UUID        `json:"session_id"`
-	MessageID   string           `json:"message_id"`   // ID único do WhatsApp
-	Type        MessageType      `json:"type"`
-	Direction   MessageDirection `json:"direction"`
-	Status      MessageStatus    `json:"status"`
-	FromJID     string           `json:"from_jid"`
-	ToJID       string           `json:"to_jid"`
-	Content     string           `json:"content,omitempty"`
-	MediaID     *uuid.UUID       `json:"media_id,omitempty"`
-	Caption     string           `json:"caption,omitempty"`
-	Timestamp   time.Time        `json:"timestamp"`
-	ReplyToID   string           `json:"reply_to_id,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
+	bun.BaseModel `bun:"table:zapcore_messages,alias:m"`
+
+	ID              uuid.UUID        `bun:"id,pk,type:uuid" json:"id"`
+	SessionID       uuid.UUID        `bun:"sessionId,type:uuid,notnull" json:"sessionId"`
+	MsgID           string           `bun:"msgId,type:varchar(255),notnull" json:"msgId"` // ID único do WhatsApp
+	MessageType     MessageType      `bun:"messageType,type:varchar(50),notnull" json:"messageType"`
+	Direction       MessageDirection `bun:"direction,type:varchar(20),notnull" json:"direction"`
+	Status          MessageStatus    `bun:"status,type:varchar(20),notnull" json:"status"`
+	SenderJID       string           `bun:"senderJid,type:varchar(100),notnull" json:"senderJid"`
+	ChatJID         string           `bun:"chatJid,type:varchar(100),notnull" json:"chatJid"`
+	Content         string           `bun:"content,type:text" json:"content,omitempty"`
+	MediaID         *uuid.UUID       `bun:"mediaId,type:uuid" json:"mediaId,omitempty"`
+	MediaPath       string           `bun:"mediaPath,type:varchar(500)" json:"mediaPath,omitempty"`
+	MediaSize       int64            `bun:"mediaSize,type:bigint" json:"mediaSize,omitempty"`
+	MediaMimeType   string           `bun:"mediaMimeType,type:varchar(100)" json:"mediaMimeType,omitempty"`
+	MediaFileName   string           `bun:"mediaFileName,type:varchar(255)" json:"mediaFileName,omitempty"`
+	Caption         string           `bun:"caption,type:text" json:"caption,omitempty"`
+	Timestamp       time.Time        `bun:"timestamp,type:timestamptz,notnull" json:"timestamp"`
+	QuotedMessageID string           `bun:"quotedMessageId,type:varchar(255)" json:"quotedMessageId,omitempty"`
+	PushName        string           `bun:"pushName,type:varchar(255)" json:"pushName,omitempty"`
+	IsFromMe        bool             `bun:"isFromMe,type:boolean" json:"isFromMe"`
+	IsGroup         bool             `bun:"isGroup,type:boolean" json:"isGroup"`
+	MediaType       string           `bun:"mediaType,type:varchar(50)" json:"mediaType,omitempty"`
+	RawPayload      map[string]any   `bun:"rawPayload,type:jsonb" json:"rawPayload,omitempty"`
+	CreatedAt       time.Time        `bun:"createdAt,type:timestamptz,notnull" json:"createdAt"`
+	UpdatedAt       time.Time        `bun:"updatedAt,type:timestamptz,notnull" json:"updatedAt"`
 }
 
 // NewMessage cria uma nova instância de Message
 func NewMessage(sessionID uuid.UUID, messageType MessageType, direction MessageDirection) *Message {
 	now := time.Now()
 	return &Message{
-		ID:        uuid.New(),
-		SessionID: sessionID,
-		Type:      messageType,
-		Direction: direction,
-		Status:    MessageStatusPending,
-		Timestamp: now,
-		CreatedAt: now,
-		UpdatedAt: now,
-		Metadata:  make(map[string]any),
+		ID:          uuid.New(),
+		SessionID:   sessionID,
+		MessageType: messageType,
+		Direction:   direction,
+		Status:      MessageStatusPending,
+		Timestamp:   now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		RawPayload:  make(map[string]any),
 	}
 }
 
@@ -107,43 +145,74 @@ func (m *Message) SetMediaID(mediaID uuid.UUID) {
 
 // SetReplyTo define a mensagem que está sendo respondida
 func (m *Message) SetReplyTo(replyToID string) {
-	m.ReplyToID = replyToID
+	m.QuotedMessageID = replyToID
 	m.UpdatedAt = time.Now()
 }
 
-// SetMetadata define um valor nos metadados
-func (m *Message) SetMetadata(key string, value any) {
-	if m.Metadata == nil {
-		m.Metadata = make(map[string]any)
+// SetRawPayloadField define um valor no payload bruto
+func (m *Message) SetRawPayloadField(key string, value any) {
+	if m.RawPayload == nil {
+		m.RawPayload = make(map[string]any)
 	}
-	m.Metadata[key] = value
+	m.RawPayload[key] = value
 	m.UpdatedAt = time.Now()
 }
 
-// GetMetadata obtém um valor dos metadados
-func (m *Message) GetMetadata(key string) (any, bool) {
-	if m.Metadata == nil {
+// GetRawPayloadField obtém um valor do payload bruto
+func (m *Message) GetRawPayloadField(key string) (any, bool) {
+	if m.RawPayload == nil {
 		return nil, false
 	}
-	value, exists := m.Metadata[key]
+	value, exists := m.RawPayload[key]
 	return value, exists
 }
 
 // IsMediaMessage verifica se a mensagem contém mídia
 func (m *Message) IsMediaMessage() bool {
-	return m.Type == MessageTypeImage ||
-		m.Type == MessageTypeVideo ||
-		m.Type == MessageTypeAudio ||
-		m.Type == MessageTypeDocument ||
-		m.Type == MessageTypeSticker ||
-		m.Type == MessageTypeGif
+	return m.MessageType == MessageTypeImage ||
+		m.MessageType == MessageTypeVideo ||
+		m.MessageType == MessageTypeAudio ||
+		m.MessageType == MessageTypeDocument ||
+		m.MessageType == MessageTypeSticker ||
+		m.MessageType == MessageTypeGif
+}
+
+// SetMediaInfo define as informações de mídia da mensagem
+func (m *Message) SetMediaInfo(path string, size int64, mimeType, fileName string) {
+	m.MediaPath = path
+	m.MediaSize = size
+	m.MediaMimeType = mimeType
+	m.MediaFileName = fileName
+}
+
+// HasMediaStored verifica se a mensagem tem mídia armazenada
+func (m *Message) HasMediaStored() bool {
+	return m.MediaPath != "" && m.MediaSize > 0
+}
+
+// GetMediaExtension retorna a extensão do arquivo de mídia
+func (m *Message) GetMediaExtension() string {
+	if m.MediaFileName == "" {
+		return ""
+	}
+
+	// Extrair extensão do nome do arquivo
+	parts := strings.Split(m.MediaFileName, ".")
+	if len(parts) > 1 {
+		return parts[len(parts)-1]
+	}
+
+	return ""
 }
 
 // IsInteractiveMessage verifica se a mensagem é interativa
 func (m *Message) IsInteractiveMessage() bool {
-	return m.Type == MessageTypeButtons ||
-		m.Type == MessageTypeList ||
-		m.Type == MessageTypePoll
+	return m.MessageType == MessageTypeButtons ||
+		m.MessageType == MessageTypeList ||
+		m.MessageType == MessageTypePoll ||
+		m.MessageType == MessageTypePollUpdate ||
+		m.MessageType == MessageTypeInteractive ||
+		m.MessageType == MessageTypeReaction
 }
 
 // IsInbound verifica se a mensagem é de entrada
@@ -173,6 +242,5 @@ func (m *Message) IsRead() bool {
 
 // HasReply verifica se a mensagem é uma resposta
 func (m *Message) HasReply() bool {
-	return m.ReplyToID != ""
+	return m.QuotedMessageID != ""
 }
-

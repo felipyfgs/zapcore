@@ -2,8 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,149 +9,149 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 )
 
-// MessageRepository implementa o repositório de mensagens
+// MessageRepository implementa o repositório de mensagens usando Bun ORM
 type MessageRepository struct {
-	db     *sql.DB
+	db     *bun.DB
 	logger *logger.Logger
 }
 
 // NewMessageRepository cria uma nova instância do repositório
-func NewMessageRepository(db *sql.DB, zeroLogger zerolog.Logger) *MessageRepository {
+func NewMessageRepository(db *bun.DB) *MessageRepository {
 	return &MessageRepository{
 		db:     db,
-		logger: logger.NewFromZerolog(zeroLogger),
+		logger: logger.Get(),
 	}
+}
+
+// ExistsByMsgID verifica se uma mensagem já existe pelo msgId
+func (r *MessageRepository) ExistsByMsgID(ctx context.Context, msgID string) (bool, error) {
+	exists, err := r.db.NewSelect().
+		Model((*message.Message)(nil)).
+		Where(`"msgId" = ?`, msgID).
+		Exists(ctx)
+
+	if err != nil {
+		return false, fmt.Errorf("erro ao verificar existência da mensagem: %w", err)
+	}
+
+	return exists, nil
+}
+
+// ExistsByMsgIDAndSessionID verifica se uma mensagem já existe pelo msgId e sessionId
+func (r *MessageRepository) ExistsByMsgIDAndSessionID(ctx context.Context, msgID string, sessionID uuid.UUID) (bool, error) {
+	exists, err := r.db.NewSelect().
+		Model((*message.Message)(nil)).
+		Where(`"msgId" = ? AND "sessionId" = ?`, msgID, sessionID).
+		Exists(ctx)
+
+	if err != nil {
+		return false, fmt.Errorf("erro ao verificar existência da mensagem por msgID e sessionID: %w", err)
+	}
+
+	return exists, nil
 }
 
 // Create cria uma nova mensagem
 func (r *MessageRepository) Create(ctx context.Context, msg *message.Message) error {
-	query := `
-		INSERT INTO zapcore_messages (
-			id, session_id, message_id, type, direction, status, 
-			from_jid, to_jid, content, media_id, caption, 
-			timestamp, reply_to_id, metadata, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-	`
-
-	metadataJSON, err := json.Marshal(msg.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
+	// Converter MsgID vazio para NULL se necessário
+	if msg.MsgID == "" {
+		msg.MsgID = uuid.New().String() // Gerar um ID temporário se vazio
 	}
 
-	// Converter MessageID vazio para NULL
-	var messageID any
-	if msg.MessageID == "" {
-		messageID = nil
-	} else {
-		messageID = msg.MessageID
+	// Garantir que timestamps estão definidos
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now()
+	}
+	if msg.UpdatedAt.IsZero() {
+		msg.UpdatedAt = time.Now()
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
-		msg.ID,
-		msg.SessionID,
-		messageID,
-		msg.Type,
-		msg.Direction,
-		msg.Status,
-		msg.FromJID,
-		msg.ToJID,
-		msg.Content,
-		msg.MediaID,
-		msg.Caption,
-		msg.Timestamp,
-		msg.ReplyToID,
-		metadataJSON,
-		msg.CreatedAt,
-		msg.UpdatedAt,
-	)
+	_, err := r.db.NewInsert().
+		Model(msg).
+		Exec(ctx)
 
 	if err != nil {
-		r.logger.Error().Err(err).Str("message_id", msg.MessageID).Msg("Erro ao criar mensagem")
+		r.logger.Error().Err(err).Str("message_id", msg.MsgID).Msg("Erro ao criar mensagem")
 		return fmt.Errorf("erro ao criar mensagem: %w", err)
 	}
 
-	r.logger.Info().Str("message_id", msg.MessageID).Str("session_id", msg.SessionID.String()).Msg("Mensagem criada com sucesso")
+	r.logger.Info().Str("message_id", msg.MsgID).Str("session_id", msg.SessionID.String()).Msg("Mensagem criada com sucesso")
 	return nil
 }
 
 // GetByID busca uma mensagem pelo ID
 func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message.Message, error) {
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		WHERE id = $1
-	`
+	msg := new(message.Message)
+	err := r.db.NewSelect().
+		Model(msg).
+		Where(`"id" = ?`, id).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, id)
-	return r.scanMessage(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, message.ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar mensagem por ID: %w", err)
+	}
+
+	return msg, nil
 }
 
-// GetByMessageID busca uma mensagem pelo message_id do WhatsApp
+// GetByMessageID busca uma mensagem pelo messageId do WhatsApp
 func (r *MessageRepository) GetByMessageID(ctx context.Context, messageID string) (*message.Message, error) {
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		WHERE message_id = $1
-	`
+	msg := new(message.Message)
+	err := r.db.NewSelect().
+		Model(msg).
+		Where(`"msgId" = ?`, messageID).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, messageID)
-	return r.scanMessage(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, message.ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar mensagem por messageID: %w", err)
+	}
+
+	return msg, nil
 }
 
 // Update atualiza uma mensagem
 func (r *MessageRepository) Update(ctx context.Context, msg *message.Message) error {
-	query := `
-		UPDATE zapcore_messages 
-		SET type = $2, direction = $3, status = $4, from_jid = $5, to_jid = $6,
-			content = $7, media_id = $8, caption = $9, timestamp = $10,
-			reply_to_id = $11, metadata = $12, updated_at = $13
-		WHERE id = $1
-	`
-
-	metadataJSON, err := json.Marshal(msg.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
-	}
-
 	msg.UpdatedAt = time.Now()
 
-	_, err = r.db.ExecContext(ctx, query,
-		msg.ID,
-		msg.Type,
-		msg.Direction,
-		msg.Status,
-		msg.FromJID,
-		msg.ToJID,
-		msg.Content,
-		msg.MediaID,
-		msg.Caption,
-		msg.Timestamp,
-		msg.ReplyToID,
-		metadataJSON,
-		msg.UpdatedAt,
-	)
+	result, err := r.db.NewUpdate().
+		Model(msg).
+		Where("? = ?", bun.Ident("id"), msg.ID).
+		Exec(ctx)
 
 	if err != nil {
-		r.logger.Error().Err(err).Str("message_id", msg.MessageID).Msg("Erro ao atualizar mensagem")
+		r.logger.Error().Err(err).Str("message_id", msg.MsgID).Msg("Erro ao atualizar mensagem")
 		return fmt.Errorf("erro ao atualizar mensagem: %w", err)
 	}
 
-	r.logger.Info().Str("message_id", msg.MessageID).Msg("Mensagem atualizada com sucesso")
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return message.ErrMessageNotFound
+	}
+
+	r.logger.Info().Str("message_id", msg.MsgID).Msg("Mensagem atualizada com sucesso")
 	return nil
 }
 
 // Delete remove uma mensagem
 func (r *MessageRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := `DELETE FROM zapcore_messages WHERE id = $1`
+	result, err := r.db.NewDelete().
+		Model((*message.Message)(nil)).
+		Where("? = ?", bun.Ident("id"), id).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		r.logger.Error().Err(err).Str("message_id", id.String()).Msg("Erro ao deletar mensagem")
 		return fmt.Errorf("erro ao deletar mensagem: %w", err)
@@ -174,39 +172,36 @@ func (r *MessageRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 // ListBySessionID lista mensagens por session ID com paginação
 func (r *MessageRepository) ListBySessionID(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*message.Message, error) {
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		WHERE session_id = $1
-		ORDER BY timestamp DESC
-		LIMIT $2 OFFSET $3
-	`
+	var messages []*message.Message
 
-	rows, err := r.db.QueryContext(ctx, query, sessionID, limit, offset)
+	err := r.db.NewSelect().
+		Model(&messages).
+		Where(`"sessionId" = ?`, sessionID).
+		OrderExpr(`"timestamp" DESC`).
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+
 	if err != nil {
 		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao listar mensagens")
 		return nil, fmt.Errorf("erro ao listar mensagens: %w", err)
 	}
-	defer rows.Close()
 
-	return r.scanMessages(rows)
+	return messages, nil
 }
 
 // ListByChatJID lista mensagens por chat JID com paginação
 func (r *MessageRepository) ListByChatJID(ctx context.Context, sessionID uuid.UUID, chatJID string, limit, offset int) ([]*message.Message, error) {
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		WHERE session_id = $1 AND (from_jid = $2 OR to_jid = $2)
-		ORDER BY timestamp DESC
-		LIMIT $3 OFFSET $4
-	`
+	var messages []*message.Message
 
-	rows, err := r.db.QueryContext(ctx, query, sessionID, chatJID, limit, offset)
+	err := r.db.NewSelect().
+		Model(&messages).
+		Where("? = ? AND ? = ?", bun.Ident("sessionId"), sessionID, bun.Ident("chatJid"), chatJID).
+		OrderExpr("? DESC", bun.Ident("timestamp")).
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+
 	if err != nil {
 		r.logger.Error().Err(err).
 			Str("session_id", sessionID.String()).
@@ -214,34 +209,34 @@ func (r *MessageRepository) ListByChatJID(ctx context.Context, sessionID uuid.UU
 			Msg("Erro ao listar mensagens do chat")
 		return nil, fmt.Errorf("erro ao listar mensagens do chat: %w", err)
 	}
-	defer rows.Close()
 
-	return r.scanMessages(rows)
+	return messages, nil
 }
 
 // CountBySessionID conta mensagens por session ID
 func (r *MessageRepository) CountBySessionID(ctx context.Context, sessionID uuid.UUID) (int64, error) {
-	query := `SELECT COUNT(*) FROM zapcore_messages WHERE session_id = $1`
+	count, err := r.db.NewSelect().
+		Model((*message.Message)(nil)).
+		Where(`"sessionId" = ?`, sessionID).
+		Count(ctx)
 
-	var count int64
-	err := r.db.QueryRowContext(ctx, query, sessionID).Scan(&count)
 	if err != nil {
 		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao contar mensagens")
 		return 0, fmt.Errorf("erro ao contar mensagens: %w", err)
 	}
 
-	return count, nil
+	return int64(count), nil
 }
 
 // UpdateStatus atualiza apenas o status de uma mensagem
 func (r *MessageRepository) UpdateStatus(ctx context.Context, messageID string, status message.MessageStatus) error {
-	query := `
-		UPDATE zapcore_messages 
-		SET status = $2, updated_at = NOW()
-		WHERE message_id = $1
-	`
+	result, err := r.db.NewUpdate().
+		Model((*message.Message)(nil)).
+		Set("? = ?", bun.Ident("status"), status).
+		Set("? = ?", bun.Ident("updatedAt"), time.Now()).
+		Where("? = ?", bun.Ident("msgId"), messageID).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, messageID, status)
 	if err != nil {
 		r.logger.Error().Err(err).Str("message_id", messageID).Msg("Erro ao atualizar status da mensagem")
 		return fmt.Errorf("erro ao atualizar status da mensagem: %w", err)
@@ -262,10 +257,11 @@ func (r *MessageRepository) UpdateStatus(ctx context.Context, messageID string, 
 
 // CountByStatus conta mensagens por status
 func (r *MessageRepository) CountByStatus(ctx context.Context, sessionID uuid.UUID, status message.MessageStatus) (int, error) {
-	query := `SELECT COUNT(*) FROM zapcore_messages WHERE session_id = $1 AND status = $2`
+	count, err := r.db.NewSelect().
+		Model((*message.Message)(nil)).
+		Where("? = ? AND ? = ?", bun.Ident("sessionId"), sessionID, bun.Ident("status"), status).
+		Count(ctx)
 
-	var count int
-	err := r.db.QueryRowContext(ctx, query, sessionID, status).Scan(&count)
 	if err != nil {
 		r.logger.Error().Err(err).
 			Str("session_id", sessionID.String()).
@@ -279,34 +275,32 @@ func (r *MessageRepository) CountByStatus(ctx context.Context, sessionID uuid.UU
 
 // List retorna mensagens com filtros opcionais
 func (r *MessageRepository) List(ctx context.Context, filters message.ListFilters) ([]*message.Message, error) {
-	// Implementação básica - pode ser expandida conforme necessário
+	query := r.db.NewSelect().Model(&[]*message.Message{})
+
+	// Aplicar filtros
 	if filters.SessionID != nil {
-		return r.ListBySessionID(ctx, *filters.SessionID, filters.Limit, filters.Offset)
+		query = query.Where("? = ?", bun.Ident("sessionId"), *filters.SessionID)
 	}
 
-	// Implementação padrão sem filtros específicos
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		ORDER BY timestamp DESC
-		LIMIT $1 OFFSET $2
-	`
-
+	// Definir limite padrão
 	limit := filters.Limit
 	if limit <= 0 {
-		limit = 50 // Limite padrão
+		limit = 50
 	}
 
-	rows, err := r.db.QueryContext(ctx, query, limit, filters.Offset)
+	var messages []*message.Message
+	err := query.
+		OrderExpr("? DESC", bun.Ident("timestamp")).
+		Limit(limit).
+		Offset(filters.Offset).
+		Scan(ctx, &messages)
+
 	if err != nil {
 		r.logger.Error().Err(err).Msg("Erro ao listar mensagens")
 		return nil, fmt.Errorf("erro ao listar mensagens: %w", err)
 	}
-	defer rows.Close()
 
-	return r.scanMessages(rows)
+	return messages, nil
 }
 
 // GetBySessionID retorna mensagens de uma sessão específica
@@ -321,113 +315,17 @@ func (r *MessageRepository) GetConversation(ctx context.Context, sessionID uuid.
 
 // GetPendingMessages retorna mensagens pendentes para reenvio
 func (r *MessageRepository) GetPendingMessages(ctx context.Context, sessionID uuid.UUID) ([]*message.Message, error) {
-	query := `
-		SELECT id, session_id, message_id, type, direction, status,
-			   from_jid, to_jid, content, media_id, caption,
-			   timestamp, reply_to_id, metadata, created_at, updated_at
-		FROM zapcore_messages
-		WHERE session_id = $1 AND status = $2
-		ORDER BY timestamp ASC
-	`
+	var messages []*message.Message
 
-	rows, err := r.db.QueryContext(ctx, query, sessionID, message.MessageStatusPending)
+	err := r.db.NewSelect().
+		Model(&messages).
+		Where("? = ? AND ? = ?", bun.Ident("sessionId"), sessionID, bun.Ident("status"), message.MessageStatusPending).
+		OrderExpr("? ASC", bun.Ident("timestamp")).
+		Scan(ctx)
+
 	if err != nil {
 		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao buscar mensagens pendentes")
 		return nil, fmt.Errorf("erro ao buscar mensagens pendentes: %w", err)
-	}
-	defer rows.Close()
-
-	return r.scanMessages(rows)
-}
-
-// scanMessage converte uma linha do banco em uma entidade Message
-func (r *MessageRepository) scanMessage(row *sql.Row) (*message.Message, error) {
-	var msg message.Message
-	var metadataJSON []byte
-
-	err := row.Scan(
-		&msg.ID,
-		&msg.SessionID,
-		&msg.MessageID,
-		&msg.Type,
-		&msg.Direction,
-		&msg.Status,
-		&msg.FromJID,
-		&msg.ToJID,
-		&msg.Content,
-		&msg.MediaID,
-		&msg.Caption,
-		&msg.Timestamp,
-		&msg.ReplyToID,
-		&metadataJSON,
-		&msg.CreatedAt,
-		&msg.UpdatedAt,
-	)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, message.ErrMessageNotFound
-		}
-		return nil, fmt.Errorf("erro ao fazer scan da mensagem: %w", err)
-	}
-
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &msg.Metadata); err != nil {
-			r.logger.Warn().Err(err).Msg("Erro ao deserializar metadata da mensagem")
-			msg.Metadata = make(map[string]any)
-		}
-	} else {
-		msg.Metadata = make(map[string]any)
-	}
-
-	return &msg, nil
-}
-
-// scanMessages converte múltiplas linhas do banco em entidades Message
-func (r *MessageRepository) scanMessages(rows *sql.Rows) ([]*message.Message, error) {
-	var messages []*message.Message
-
-	for rows.Next() {
-		var msg message.Message
-		var metadataJSON []byte
-
-		err := rows.Scan(
-			&msg.ID,
-			&msg.SessionID,
-			&msg.MessageID,
-			&msg.Type,
-			&msg.Direction,
-			&msg.Status,
-			&msg.FromJID,
-			&msg.ToJID,
-			&msg.Content,
-			&msg.MediaID,
-			&msg.Caption,
-			&msg.Timestamp,
-			&msg.ReplyToID,
-			&metadataJSON,
-			&msg.CreatedAt,
-			&msg.UpdatedAt,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("erro ao fazer scan da mensagem: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &msg.Metadata); err != nil {
-				r.logger.Warn().Err(err).Msg("Erro ao deserializar metadata da mensagem")
-				msg.Metadata = make(map[string]any)
-			}
-		} else {
-			msg.Metadata = make(map[string]any)
-		}
-
-		messages = append(messages, &msg)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("erro ao iterar sobre as mensagens: %w", err)
 	}
 
 	return messages, nil

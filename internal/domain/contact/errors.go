@@ -39,4 +39,3 @@ func NewContactError(contactID uuid.UUID, operation string, err error) *ContactE
 		Err:       err,
 	}
 }
-

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/uptrace/bun"
 )
 
 // ChatType representa os tipos de chat
@@ -16,20 +17,22 @@ const (
 
 // Chat representa um chat/conversa do WhatsApp
 type Chat struct {
-	ID              uuid.UUID              `json:"id"`
-	SessionID       uuid.UUID              `json:"session_id"`
-	JID             string                 `json:"jid"`
-	Name            string                 `json:"name,omitempty"`
-	Type            ChatType               `json:"type"`
-	LastMessageTime *time.Time             `json:"last_message_time,omitempty"`
-	MessageCount    int                    `json:"message_count"`
-	UnreadCount     int                    `json:"unread_count"`
-	IsMuted         bool                   `json:"is_muted"`
-	IsPinned        bool                   `json:"is_pinned"`
-	IsArchived      bool                   `json:"is_archived"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-	CreatedAt       time.Time              `json:"created_at"`
-	UpdatedAt       time.Time              `json:"updated_at"`
+	bun.BaseModel `bun:"table:zapcore_chats,alias:c"`
+
+	ID              uuid.UUID      `bun:"id,pk,type:uuid" json:"id"`
+	SessionID       uuid.UUID      `bun:"sessionId,type:uuid,notnull" json:"sessionId"`
+	JID             string         `bun:"jid,type:varchar(100),notnull" json:"jid"`
+	Name            string         `bun:"name,type:varchar(255)" json:"name,omitempty"`
+	Type            ChatType       `bun:"chatType,type:varchar(20),notnull" json:"type"`
+	LastMessageTime *time.Time     `bun:"lastMessageTime,type:timestamptz" json:"lastMessageTime,omitempty"`
+	MessageCount    int            `bun:"messageCount,type:integer" json:"messageCount"`
+	UnreadCount     int            `bun:"unreadCount,type:integer" json:"unreadCount"`
+	IsMuted         bool           `bun:"isMuted,type:boolean" json:"isMuted"`
+	IsPinned        bool           `bun:"isPinned,type:boolean" json:"isPinned"`
+	IsArchived      bool           `bun:"isArchived,type:boolean" json:"isArchived"`
+	Metadata        map[string]any `bun:"metadata,type:jsonb" json:"metadata,omitempty"`
+	CreatedAt       time.Time      `bun:"createdAt,type:timestamptz,notnull" json:"createdAt"`
+	UpdatedAt       time.Time      `bun:"updatedAt,type:timestamptz,notnull" json:"updatedAt"`
 }
 
 // NewChat cria uma nova instância de Chat
@@ -154,4 +157,3 @@ func (c *Chat) HasUnreadMessages() bool {
 func (c *Chat) IsActive() bool {
 	return !c.IsArchived
 }
-

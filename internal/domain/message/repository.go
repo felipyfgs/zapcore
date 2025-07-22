@@ -18,6 +18,12 @@ type Repository interface {
 	// GetByMessageID busca uma mensagem pelo MessageID do WhatsApp
 	GetByMessageID(ctx context.Context, messageID string) (*Message, error)
 
+	// ExistsByMsgID verifica se uma mensagem já existe pelo msgId
+	ExistsByMsgID(ctx context.Context, msgID string) (bool, error)
+
+	// ExistsByMsgIDAndSessionID verifica se uma mensagem já existe pelo msgId e sessionId
+	ExistsByMsgIDAndSessionID(ctx context.Context, msgID string, sessionID uuid.UUID) (bool, error)
+
 	// List retorna mensagens com filtros opcionais
 	List(ctx context.Context, filters ListFilters) ([]*Message, error)
 
@@ -68,4 +74,3 @@ func DefaultListFilters() ListFilters {
 		OrderDir: "DESC",
 	}
 }
-

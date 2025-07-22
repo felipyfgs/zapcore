@@ -69,4 +69,3 @@ func DefaultListFilters() ListFilters {
 		OrderDir: "DESC",
 	}
 }
-

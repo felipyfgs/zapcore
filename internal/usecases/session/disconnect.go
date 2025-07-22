@@ -9,7 +9,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // DisconnectUseCase representa o caso de uso para desconectar sessão
@@ -20,24 +19,24 @@ type DisconnectUseCase struct {
 }
 
 // NewDisconnectUseCase cria uma nova instância do caso de uso
-func NewDisconnectUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client, zeroLogger zerolog.Logger) *DisconnectUseCase {
+func NewDisconnectUseCase(sessionRepo session.Repository, whatsappClient whatsapp.Client) *DisconnectUseCase {
 	return &DisconnectUseCase{
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // DisconnectRequest representa a requisição para desconectar sessão
 type DisconnectRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 }
 
 // DisconnectResponse representa a resposta da desconexão de sessão
 type DisconnectResponse struct {
-	SessionID uuid.UUID                    `json:"session_id"`
+	SessionID uuid.UUID                     `json:"sessionId"`
 	Status    session.WhatsAppSessionStatus `json:"status"`
-	Message   string                       `json:"message"`
+	Message   string                        `json:"message"`
 }
 
 // Execute executa o caso de uso de desconexão de sessão
@@ -86,4 +85,3 @@ func (uc *DisconnectUseCase) Execute(ctx context.Context, req *DisconnectRequest
 		Message:   "Sessão desconectada com sucesso",
 	}, nil
 }
-

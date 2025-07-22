@@ -53,20 +53,19 @@ type Service interface {
 
 // HealthStatus representa o status de saúde das sessões
 type HealthStatus struct {
-	TotalSessions     int                            `json:"total_sessions"`
-	ActiveSessions    int                            `json:"active_sessions"`
-	ConnectedSessions int                            `json:"connected_sessions"`
-	ErrorSessions     int                            `json:"error_sessions"`
-	SessionDetails    map[uuid.UUID]SessionHealth    `json:"session_details"`
+	TotalSessions     int                         `json:"total_sessions"`
+	ActiveSessions    int                         `json:"active_sessions"`
+	ConnectedSessions int                         `json:"connected_sessions"`
+	ErrorSessions     int                         `json:"error_sessions"`
+	SessionDetails    map[uuid.UUID]SessionHealth `json:"session_details"`
 }
 
 // SessionHealth representa a saúde de uma sessão específica
 type SessionHealth struct {
-	ID            uuid.UUID             `json:"id"`
-	Name          string                `json:"name"`
-	Status        WhatsAppSessionStatus `json:"status"`
-	IsHealthy     bool                  `json:"is_healthy"`
-	LastSeen      string                `json:"last_seen,omitempty"`
-	ErrorMessage  string                `json:"error_message,omitempty"`
+	ID           uuid.UUID             `json:"id"`
+	Name         string                `json:"name"`
+	Status       WhatsAppSessionStatus `json:"status"`
+	IsHealthy    bool                  `json:"is_healthy"`
+	LastSeen     string                `json:"last_seen,omitempty"`
+	ErrorMessage string                `json:"error_message,omitempty"`
 }
-

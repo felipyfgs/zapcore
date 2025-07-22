@@ -3,7 +3,9 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"strings"
 
 	messageEntity "zapcore/internal/domain/message"
 	"zapcore/internal/shared/media"
@@ -12,7 +14,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // MessageHandler gerencia as requisições HTTP para mensagens
@@ -26,12 +27,11 @@ type MessageHandler struct {
 func NewMessageHandler(
 	sendTextUseCase *message.SendTextUseCase,
 	sendMediaUseCase *message.SendMediaUseCase,
-	zeroLogger zerolog.Logger,
 ) *MessageHandler {
 	return &MessageHandler{
 		sendTextUseCase:  sendTextUseCase,
 		sendMediaUseCase: sendMediaUseCase,
-		logger:           logger.NewFromZerolog(zeroLogger),
+		logger:           logger.Get(),
 	}
 }
 
@@ -180,12 +180,13 @@ func (h *MessageHandler) SendSticker(c *gin.Context) {
 
 // MediaRequest representa a requisição padronizada para envio de mídia
 type MediaRequest struct {
-	To      string `json:"to" binding:"required"`
-	Base64  string `json:"base64,omitempty"` // Base64 com MIME type
-	URL     string `json:"url,omitempty"`    // URL pública HTTP/HTTPS
-	File    string `json:"file,omitempty"`   // Caminho local do arquivo
-	Caption string `json:"caption,omitempty"`
-	ReplyID string `json:"replyId,omitempty"`
+	To       string `json:"to" binding:"required"`
+	Base64   string `json:"base64,omitempty"`   // Base64 com MIME type
+	URL      string `json:"url,omitempty"`      // URL pública HTTP/HTTPS
+	File     string `json:"file,omitempty"`     // Caminho local do arquivo
+	FileName string `json:"fileName,omitempty"` // Nome do arquivo
+	Caption  string `json:"caption,omitempty"`
+	ReplyID  string `json:"replyId,omitempty"`
 }
 
 // sendMediaHandler é um método auxiliar para envio de mídia
@@ -200,44 +201,115 @@ func (h *MessageHandler) sendMediaHandler(c *gin.Context, mediaType string) {
 		return
 	}
 
-	// Parse do JSON body
+	// Parse do body (JSON ou form-data)
 	var req MediaRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Dados inválidos",
-			Message: "Erro ao processar JSON: " + err.Error(),
-		})
-		return
+
+	// Verificar se é form-data ou JSON
+	contentType := c.GetHeader("Content-Type")
+	h.logger.Debug().
+		Str("content_type", contentType).
+		Msg("Processando requisição de mídia")
+
+	// Variáveis para armazenar dados do form-data
+	var formFile multipart.File
+	var formHeader *multipart.FileHeader
+
+	if strings.Contains(contentType, "multipart/form-data") {
+		h.logger.Debug().Msg("Processando form-data")
+		// Parse form-data
+		req.To = c.PostForm("to")
+		req.Caption = c.PostForm("caption")
+		req.ReplyID = c.PostForm("replyId")
+
+		h.logger.Debug().
+			Str("to", req.To).
+			Str("caption", req.Caption).
+			Msg("Dados do form-data extraídos")
+
+		// Validar campo obrigatório "to"
+		if req.To == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Campo 'to' obrigatório",
+				Message: "O campo 'to' deve ser fornecido",
+			})
+			return
+		}
+
+		// Processar arquivo enviado
+		file, header, err := c.Request.FormFile("media")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Arquivo de mídia obrigatório",
+				Message: "Erro ao processar arquivo: " + err.Error(),
+			})
+			return
+		}
+
+		// Armazenar para uso posterior
+		formFile = file
+		formHeader = header
+		req.FileName = header.Filename
+
+		// Marcar que temos dados de arquivo (não base64)
+		req.File = "form-data-file" // Marcador especial para indicar que temos arquivo
+
+	} else {
+		// Parse JSON
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Dados inválidos",
+				Message: "Erro ao processar JSON: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	// Contar quantos campos de mídia estão preenchidos
 	mediaFieldsCount := 0
+	var mediaSource string
+
+	// Verificar form-data
+	if req.File == "form-data-file" {
+		mediaFieldsCount++
+		mediaSource = "form-data"
+	}
 	if req.Base64 != "" {
 		mediaFieldsCount++
+		if mediaSource == "" {
+			mediaSource = "base64"
+		}
 	}
 	if req.URL != "" {
 		mediaFieldsCount++
-	}
-	if req.File != "" {
-		mediaFieldsCount++
+		if mediaSource == "" {
+			mediaSource = "url"
+		}
 	}
 
 	// Validar que apenas um campo de mídia está presente
 	if mediaFieldsCount == 0 {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Parâmetros obrigatórios",
-			Message: "É obrigatório fornecer um dos campos: 'base64', 'url' ou 'file'",
+			Error:   "MEDIA_REQUIRED",
+			Message: "É obrigatório fornecer um dos campos: 'base64', 'url' ou usar form-data",
 		})
 		return
 	}
 
 	if mediaFieldsCount > 1 {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Conflito de parâmetros",
-			Message: "Apenas um dos campos 'base64', 'url' ou 'file' deve ser enviado",
+			Error:   "MEDIA_CONFLICT",
+			Message: "Apenas um dos campos 'base64', 'url' ou form-data deve ser enviado por vez",
 		})
 		return
 	}
+
+	h.logger.Debug().
+		Str("media_source", mediaSource).
+		Str("media_type", mediaType).
+		Str("base64", req.Base64).
+		Str("url", req.URL).
+		Str("file", req.File).
+		Msg("Validação de mídia aprovada")
 
 	// Determinar tipo de mensagem baseado no mediaType
 	var messageType string
@@ -263,40 +335,97 @@ func (h *MessageHandler) sendMediaHandler(c *gin.Context, mediaType string) {
 	// Processar mídia baseado no novo formato
 	var mediaData io.Reader
 	var fileName, mimeType string
-	var mediaURL, filePath string
+	var mediaURL string
 
-	if req.Base64 != "" {
-		// Processar base64
+	h.logger.Debug().
+		Str("req_file", req.File).
+		Str("req_base64", req.Base64).
+		Str("req_url", req.URL).
+		Msg("Iniciando processamento de mídia")
+
+	if req.File == "form-data-file" {
+		// Usar arquivo já processado do form-data
+		if formFile == nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Erro interno",
+				Message: "Arquivo form-data não encontrado",
+			})
+			return
+		}
+		defer formFile.Close()
+
+		mediaData = formFile
+		fileName = formHeader.Filename
+		mimeType = h.detectMimeTypeFromFilename(fileName)
+
+	} else if req.Base64 != "" {
+		// Validar e processar base64
+		if err := h.validateBase64Data(req.Base64); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "INVALID_BASE64",
+				Message: err.Error(),
+			})
+			return
+		}
+
 		mediaData, fileName, mimeType, err = h.processBase64Media(req.Base64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
-				Error:   "Erro ao processar base64",
+				Error:   "BASE64_PROCESSING_ERROR",
 				Message: err.Error(),
 			})
 			return
 		}
 	} else if req.URL != "" {
-		// Processar URL pública - será tratado pelo use case
+		// Validar e processar URL pública
+		if err := h.validateURL(req.URL); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "INVALID_URL",
+				Message: err.Error(),
+			})
+			return
+		}
 		mediaURL = req.URL
 		mediaData = nil
-	} else if req.File != "" {
-		// Processar arquivo local - será tratado pelo use case
-		filePath = req.File
-		mediaData = nil
+
+		// Detectar MIME type baseado na extensão da URL
+		mimeType = h.detectMimeTypeFromURL(req.URL)
+		h.logger.Debug().
+			Str("url", req.URL).
+			Str("detected_mime_type", mimeType).
+			Msg("MIME type detectado da URL")
+
+		// Se não conseguiu detectar, usar um padrão baseado no tipo de mídia
+		if mimeType == "" {
+			switch mediaType {
+			case "image":
+				mimeType = "image/jpeg" // Padrão para imagens
+			case "video":
+				mimeType = "video/mp4" // Padrão para vídeos
+			case "audio":
+				mimeType = "audio/mpeg" // Padrão para áudios
+			case "document":
+				mimeType = "application/pdf" // Padrão para documentos
+			}
+			h.logger.Debug().
+				Str("fallback_mime_type", mimeType).
+				Str("media_type", mediaType).
+				Msg("Usando MIME type padrão")
+		}
 	}
 
 	// Criar requisição para o use case
 	useCaseReq := &message.SendMediaRequest{
-		SessionID: sessionID,
-		ToJID:     req.To,
-		Type:      messageEntity.MessageType(messageType),
-		MediaData: mediaData,
-		MediaURL:  mediaURL,
-		FilePath:  filePath, // Novo campo para caminho local
-		Caption:   req.Caption,
-		FileName:  fileName,
-		MimeType:  mimeType,
-		ReplyToID: req.ReplyID,
+		SessionID:  sessionID,
+		ToJID:      req.To,
+		Type:       messageEntity.MessageType(messageType),
+		MediaData:  mediaData,
+		MediaURL:   mediaURL,
+		Base64Data: req.Base64, // Passar dados base64 se disponível
+		Caption:    req.Caption,
+		FileName:   fileName,
+		MimeType:   mimeType,
+		ReplyToID:  req.ReplyID,
 	}
 
 	response, err := h.sendMediaUseCase.Execute(c.Request.Context(), useCaseReq)
@@ -320,14 +449,83 @@ func (h *MessageHandler) handleError(c *gin.Context, err error) {
 
 // processBase64Media processa dados de mídia em base64
 func (h *MessageHandler) processBase64Media(base64Data string) (io.Reader, string, string, error) {
+	h.logger.Debug().
+		Str("base64_prefix", base64Data[:min(50, len(base64Data))]).
+		Msg("🔄 Iniciando processamento de base64")
+
 	// Usar o processador de mídia para decodificar base64
 	processor := media.NewMediaProcessor()
 	processedMedia, err := processor.ProcessBase64Media(base64Data)
 	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Str("base64_prefix", base64Data[:min(50, len(base64Data))]).
+			Msg("❌ Erro ao processar base64")
 		return nil, "", "", fmt.Errorf("erro ao processar base64: %w", err)
 	}
 
+	h.logger.Debug().
+		Str("mime_type", processedMedia.MimeType).
+		Str("file_name", processedMedia.FileName).
+		Int64("size", processedMedia.Size).
+		Msg("✅ Base64 processado com sucesso")
+
 	return processedMedia.GetReader(), processedMedia.FileName, processedMedia.MimeType, nil
+}
+
+// detectMimeTypeFromFilename detecta o tipo MIME baseado no nome do arquivo
+func (h *MessageHandler) detectMimeTypeFromFilename(filename string) string {
+	ext := strings.ToLower(filename)
+
+	// Imagens
+	if strings.HasSuffix(ext, ".jpg") || strings.HasSuffix(ext, ".jpeg") {
+		return "image/jpeg"
+	}
+	if strings.HasSuffix(ext, ".png") {
+		return "image/png"
+	}
+	if strings.HasSuffix(ext, ".gif") {
+		return "image/gif"
+	}
+	if strings.HasSuffix(ext, ".webp") {
+		return "image/webp"
+	}
+
+	// Vídeos
+	if strings.HasSuffix(ext, ".mp4") {
+		return "video/mp4"
+	}
+	if strings.HasSuffix(ext, ".avi") {
+		return "video/avi"
+	}
+	if strings.HasSuffix(ext, ".mov") {
+		return "video/mov"
+	}
+
+	// Áudios
+	if strings.HasSuffix(ext, ".mp3") {
+		return "audio/mpeg"
+	}
+	if strings.HasSuffix(ext, ".wav") {
+		return "audio/wav"
+	}
+	if strings.HasSuffix(ext, ".ogg") {
+		return "audio/ogg"
+	}
+
+	// Documentos
+	if strings.HasSuffix(ext, ".pdf") {
+		return "application/pdf"
+	}
+	if strings.HasSuffix(ext, ".doc") {
+		return "application/msword"
+	}
+	if strings.HasSuffix(ext, ".docx") {
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	}
+
+	// Padrão
+	return "application/octet-stream"
 }
 
 // handleMediaError trata erros específicos de mídia
@@ -404,4 +602,109 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// validateBase64Data valida dados em base64
+func (h *MessageHandler) validateBase64Data(base64Data string) error {
+	if len(base64Data) == 0 {
+		return fmt.Errorf("dados base64 não podem estar vazios")
+	}
+
+	// Verificar se tem o prefixo data: (data URI scheme)
+	if !strings.HasPrefix(base64Data, "data:") {
+		return fmt.Errorf("base64 deve começar com 'data:'")
+	}
+
+	// Verificar formato: data:mime/type;base64,dados
+	parts := strings.Split(base64Data, ",")
+	if len(parts) != 2 {
+		return fmt.Errorf("formato de data URI inválido")
+	}
+
+	// Verificar se é base64 válido (apenas a parte dos dados)
+	base64DataOnly := parts[1]
+	if len(base64DataOnly)%4 != 0 {
+		return fmt.Errorf("dados base64 com tamanho inválido")
+	}
+
+	// Tentar decodificar para verificar se é válido (usar o formato completo)
+	_, _, err := media.DecodeBase64Media(base64Data)
+	if err != nil {
+		return fmt.Errorf("dados base64 inválidos: %w", err)
+	}
+
+	return nil
+}
+
+// validateURL valida uma URL
+func (h *MessageHandler) validateURL(url string) error {
+	if len(url) == 0 {
+		return fmt.Errorf("URL não pode estar vazia")
+	}
+
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return fmt.Errorf("URL deve começar com http:// ou https://")
+	}
+
+	if len(url) > 2048 {
+		return fmt.Errorf("URL muito longa (máximo 2048 caracteres)")
+	}
+
+	return nil
+}
+
+// detectMimeTypeFromURL detecta MIME type baseado na extensão da URL
+func (h *MessageHandler) detectMimeTypeFromURL(url string) string {
+	// Extrair extensão da URL (remover query parameters)
+	if idx := strings.Index(url, "?"); idx != -1 {
+		url = url[:idx]
+	}
+
+	// Encontrar a última ocorrência de '.' para pegar a extensão
+	if idx := strings.LastIndex(url, "."); idx != -1 {
+		ext := strings.ToLower(url[idx+1:])
+		return h.getMimeTypeFromExtension(ext)
+	}
+
+	return ""
+}
+
+// getMimeTypeFromExtension retorna MIME type baseado na extensão
+func (h *MessageHandler) getMimeTypeFromExtension(ext string) string {
+	mimeTypes := map[string]string{
+		// Imagens
+		"jpg":  "image/jpeg",
+		"jpeg": "image/jpeg",
+		"png":  "image/png",
+		"gif":  "image/gif",
+		"webp": "image/webp",
+
+		// Áudios
+		"mp3": "audio/mpeg",
+		"wav": "audio/wav",
+		"ogg": "audio/ogg",
+		"aac": "audio/aac",
+		"m4a": "audio/mp4",
+
+		// Vídeos
+		"mp4":  "video/mp4",
+		"avi":  "video/x-msvideo",
+		"mov":  "video/quicktime",
+		"mkv":  "video/x-matroska",
+		"webm": "video/webm",
+
+		// Documentos
+		"pdf":  "application/pdf",
+		"doc":  "application/msword",
+		"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"xls":  "application/vnd.ms-excel",
+		"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"txt":  "text/plain",
+	}
+
+	if mimeType, exists := mimeTypes[ext]; exists {
+		return mimeType
+	}
+
+	return ""
 }

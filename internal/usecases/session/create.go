@@ -6,8 +6,6 @@ import (
 
 	"zapcore/internal/domain/session"
 	"zapcore/pkg/logger"
-
-	"github.com/rs/zerolog"
 )
 
 // CreateUseCase representa o caso de uso para criar sessão
@@ -17,10 +15,10 @@ type CreateUseCase struct {
 }
 
 // NewCreateUseCase cria uma nova instância do caso de uso
-func NewCreateUseCase(sessionRepo session.Repository, zeroLogger zerolog.Logger) *CreateUseCase {
+func NewCreateUseCase(sessionRepo session.Repository) *CreateUseCase {
 	return &CreateUseCase{
 		sessionRepo: sessionRepo,
-		logger:      logger.NewFromZerolog(zeroLogger),
+		logger:      logger.Get(),
 	}
 }
 

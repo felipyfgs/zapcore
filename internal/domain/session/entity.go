@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/uptrace/bun"
 )
 
 // WhatsAppSessionStatus representa os possíveis status de uma sessão WhatsApp
@@ -17,18 +18,20 @@ const (
 
 // Session representa uma sessão do WhatsApp
 type Session struct {
-	ID        uuid.UUID              `json:"id"`
-	Name      string                 `json:"name"`
-	Status    WhatsAppSessionStatus  `json:"status"`
-	JID       string                 `json:"jid,omitempty"`
-	QRCode    string                 `json:"qr_code,omitempty"`
-	ProxyURL  string                 `json:"proxy_url,omitempty"`
-	Webhook   string                 `json:"webhook,omitempty"`
-	IsActive  bool                   `json:"is_active"`
-	LastSeen  *time.Time             `json:"last_seen,omitempty"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	bun.BaseModel `bun:"table:zapcore_sessions,alias:s"`
+
+	ID        uuid.UUID             `bun:"id,pk,type:uuid" json:"id"`
+	Name      string                `bun:"name,type:varchar(100),notnull,unique" json:"name"`
+	Status    WhatsAppSessionStatus `bun:"status,type:varchar(20),notnull" json:"status"`
+	JID       string                `bun:"jid,type:varchar(100)" json:"jid,omitempty"`
+	QRCode    string                `bun:"-" json:"qrCode,omitempty"`   // Não persistir no banco
+	ProxyURL  string                `bun:"-" json:"proxyUrl,omitempty"` // Não persistir no banco
+	Webhook   string                `bun:"-" json:"webhook,omitempty"`  // Não persistir no banco
+	IsActive  bool                  `bun:"isActive,type:boolean" json:"isActive"`
+	LastSeen  *time.Time            `bun:"lastSeen,type:timestamptz" json:"lastSeen,omitempty"`
+	CreatedAt time.Time             `bun:"createdAt,type:timestamptz,notnull" json:"createdAt"`
+	UpdatedAt time.Time             `bun:"updatedAt,type:timestamptz,notnull" json:"updatedAt"`
+	Metadata  map[string]any        `bun:"-" json:"metadata,omitempty"` // Não persistir no banco por enquanto
 }
 
 // NewSession cria uma nova instância de Session
@@ -122,4 +125,3 @@ func (s *Session) GetMetadata(key string) (any, bool) {
 	value, exists := s.Metadata[key]
 	return value, exists
 }
-

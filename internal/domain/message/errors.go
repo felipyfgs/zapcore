@@ -68,4 +68,3 @@ func NewMediaError(mediaID uuid.UUID, mediaType string, err error) *MediaError {
 		Err:       err,
 	}
 }
-

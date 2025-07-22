@@ -15,7 +15,6 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 )
 
 // Constantes para limites de tamanho de mídia (em bytes)
@@ -62,28 +61,27 @@ func NewSendMediaUseCase(
 	messageRepo message.Repository,
 	sessionRepo session.Repository,
 	whatsappClient whatsapp.Client,
-	zeroLogger zerolog.Logger,
 ) *SendMediaUseCase {
 	return &SendMediaUseCase{
 		messageRepo:    messageRepo,
 		sessionRepo:    sessionRepo,
 		whatsappClient: whatsappClient,
-		logger:         logger.NewFromZerolog(zeroLogger),
+		logger:         logger.Get(),
 	}
 }
 
 // SendMediaRequest representa a requisição para enviar mídia
 type SendMediaRequest struct {
-	SessionID uuid.UUID           `json:"session_id" validate:"required"`
-	ToJID     string              `json:"to_jid" validate:"required"`
-	Type      message.MessageType `json:"type" validate:"required"`
-	MediaData io.Reader           `json:"-"`
-	MediaURL  string              `json:"media_url,omitempty"`
-	FilePath  string              `json:"file_path,omitempty"` // Caminho local do arquivo
-	Caption   string              `json:"caption,omitempty"`
-	FileName  string              `json:"file_name,omitempty"`
-	MimeType  string              `json:"mime_type,omitempty"`
-	ReplyToID string              `json:"reply_to_id,omitempty"`
+	SessionID  uuid.UUID           `json:"sessionId" validate:"required"`
+	ToJID      string              `json:"to_jid" validate:"required"`
+	Type       message.MessageType `json:"type" validate:"required"`
+	MediaData  io.Reader           `json:"-"`
+	MediaURL   string              `json:"media_url,omitempty"`
+	Base64Data string              `json:"base64_data,omitempty"` // Dados em base64
+	Caption    string              `json:"caption,omitempty"`
+	FileName   string              `json:"file_name,omitempty"`
+	MimeType   string              `json:"mime_type,omitempty"`
+	ReplyToID  string              `json:"reply_to_id,omitempty"`
 }
 
 // SendMediaResponse representa a resposta do envio de mídia
@@ -119,22 +117,15 @@ func (uc *SendMediaUseCase) Execute(ctx context.Context, req *SendMediaRequest) 
 		return nil, message.ErrInvalidMediaType
 	}
 
-	// Validar entrada de mídia (deve ter dados, URL ou caminho)
-	if req.MediaData == nil && req.MediaURL == "" && req.FilePath == "" {
-		return nil, fmt.Errorf("é necessário fornecer dados de mídia, URL ou caminho do arquivo")
+	// Validar entrada de mídia (deve ter dados, URL ou base64)
+	if req.MediaData == nil && req.MediaURL == "" && req.Base64Data == "" {
+		return nil, fmt.Errorf("é necessário fornecer dados de mídia, URL ou base64")
 	}
 
 	// Validar URL se fornecida
 	if req.MediaURL != "" {
 		if err := validateMediaURL(req.MediaURL); err != nil {
 			return nil, fmt.Errorf("URL inválida: %w", err)
-		}
-	}
-
-	// Validar caminho do arquivo se fornecido
-	if req.FilePath != "" {
-		if err := validateFilePath(req.FilePath); err != nil {
-			return nil, fmt.Errorf("caminho do arquivo inválido: %w", err)
 		}
 	}
 
@@ -159,105 +150,67 @@ func (uc *SendMediaUseCase) Execute(ctx context.Context, req *SendMediaRequest) 
 
 	switch req.Type {
 	case message.MessageTypeImage:
-		// Determinar a URL a ser usada (pode ser URL pública ou caminho local)
-		imageURL := req.MediaURL
-		if req.FilePath != "" {
-			imageURL = req.FilePath
-		}
-
 		whatsappReq := &whatsapp.SendImageRequest{
-			SessionID: req.SessionID,
-			ToJID:     req.ToJID,
-			ImageData: req.MediaData,
-			ImageURL:  imageURL,
-			Caption:   req.Caption,
-			ReplyToID: req.ReplyToID,
-			MimeType:  req.MimeType,
-			FileName:  req.FileName,
+			SessionID:  req.SessionID,
+			ToJID:      req.ToJID,
+			ImageData:  req.MediaData,
+			ImageURL:   req.MediaURL,
+			Base64Data: req.Base64Data,
+			Caption:    req.Caption,
+			ReplyToID:  req.ReplyToID,
+			MimeType:   req.MimeType,
+			FileName:   req.FileName,
 		}
 		whatsappResp, err = uc.whatsappClient.SendImageMessage(ctx, whatsappReq)
 
 	case message.MessageTypeAudio:
-		// Determinar a URL a ser usada (pode ser URL pública ou caminho local)
-		audioURL := req.MediaURL
-		if req.FilePath != "" {
-			audioURL = req.FilePath
-		}
-
 		whatsappReq := &whatsapp.SendAudioRequest{
-			SessionID: req.SessionID,
-			ToJID:     req.ToJID,
-			AudioData: req.MediaData,
-			AudioURL:  audioURL,
-			ReplyToID: req.ReplyToID,
-			MimeType:  req.MimeType,
-			FileName:  req.FileName,
+			SessionID:  req.SessionID,
+			ToJID:      req.ToJID,
+			AudioData:  req.MediaData,
+			AudioURL:   req.MediaURL,
+			Base64Data: req.Base64Data,
+			ReplyToID:  req.ReplyToID,
+			MimeType:   req.MimeType,
+			FileName:   req.FileName,
 		}
 		whatsappResp, err = uc.whatsappClient.SendAudioMessage(ctx, whatsappReq)
 
 	case message.MessageTypeVideo:
-		// Determinar a URL a ser usada (pode ser URL pública ou caminho local)
-		videoURL := req.MediaURL
-		if req.FilePath != "" {
-			videoURL = req.FilePath
-		}
-
 		whatsappReq := &whatsapp.SendVideoRequest{
-			SessionID: req.SessionID,
-			ToJID:     req.ToJID,
-			VideoData: req.MediaData,
-			VideoURL:  videoURL,
-			Caption:   req.Caption,
-			ReplyToID: req.ReplyToID,
-			MimeType:  req.MimeType,
-			FileName:  req.FileName,
+			SessionID:  req.SessionID,
+			ToJID:      req.ToJID,
+			VideoData:  req.MediaData,
+			VideoURL:   req.MediaURL,
+			Base64Data: req.Base64Data,
+			Caption:    req.Caption,
+			ReplyToID:  req.ReplyToID,
+			MimeType:   req.MimeType,
+			FileName:   req.FileName,
 		}
 		whatsappResp, err = uc.whatsappClient.SendVideoMessage(ctx, whatsappReq)
 
 	case message.MessageTypeDocument:
-		// Determinar a URL a ser usada (pode ser URL pública ou caminho local)
-		documentURL := req.MediaURL
-		mimeType := req.MimeType
-		fileName := req.FileName
-
-		if req.FilePath != "" {
-			documentURL = req.FilePath
-			// Se não foi fornecido nome do arquivo, usar o nome do arquivo local
-			if fileName == "" {
-				// Extrair nome do arquivo do caminho
-				parts := strings.Split(req.FilePath, "/")
-				fileName = parts[len(parts)-1]
-			}
-			// Se não foi fornecido tipo MIME, detectar pela extensão
-			if mimeType == "" {
-				mimeType = uc.detectMimeTypeFromPath(req.FilePath)
-			}
-		}
-
 		whatsappReq := &whatsapp.SendDocumentRequest{
 			SessionID:    req.SessionID,
 			ToJID:        req.ToJID,
 			DocumentData: req.MediaData,
-			DocumentURL:  documentURL,
-			FileName:     fileName,
+			DocumentURL:  req.MediaURL,
+			Base64Data:   req.Base64Data,
+			FileName:     req.FileName,
 			Caption:      req.Caption,
 			ReplyToID:    req.ReplyToID,
-			MimeType:     mimeType,
+			MimeType:     req.MimeType,
 		}
 		whatsappResp, err = uc.whatsappClient.SendDocumentMessage(ctx, whatsappReq)
 
 	case message.MessageTypeSticker:
-		// Determinar a URL a ser usada (pode ser URL pública ou caminho local)
-		stickerURL := req.MediaURL
-		if req.FilePath != "" {
-			stickerURL = req.FilePath
-		}
-
 		whatsappReq := &whatsapp.SendStickerRequest{
 			SessionID:   req.SessionID,
 			ToJID:       req.ToJID,
 			StickerData: req.MediaData,
-			StickerURL:  stickerURL,
+			StickerURL:  req.MediaURL,
+			Base64Data:  req.Base64Data,
 			ReplyToID:   req.ReplyToID,
 			MimeType:    req.MimeType,
 		}

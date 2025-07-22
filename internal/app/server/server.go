@@ -2,32 +2,165 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"zapcore/internal/app/config"
+	"zapcore/internal/domain/chat"
+	"zapcore/internal/domain/contact"
+	"zapcore/internal/domain/message"
+	"zapcore/internal/domain/session"
 	"zapcore/internal/http/handlers"
 	"zapcore/internal/http/router"
 	"zapcore/internal/infra/database"
 	"zapcore/internal/infra/repository"
+	"zapcore/internal/infra/storage"
 	"zapcore/internal/infra/whatsapp"
-	"zapcore/internal/usecases/message"
-	"zapcore/internal/usecases/session"
+	messageUseCase "zapcore/internal/usecases/message"
+	sessionUseCase "zapcore/internal/usecases/session"
 	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 )
+
+// BunDB representa a conexão com o banco de dados usando Bun ORM
+type BunDB struct {
+	db     *bun.DB
+	config *database.Config
+	logger *logger.Logger
+}
+
+// NewBunDB cria uma nova conexão com o banco de dados usando Bun ORM
+func NewBunDB(cfg *config.Config) (*BunDB, error) {
+	// Converter configuração para formato do database
+	port, err := strconv.Atoi(cfg.Database.Port)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao converter porta do banco: %w", err)
+	}
+
+	// Criar DSN para PostgreSQL
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		port,
+		cfg.Database.Name,
+		cfg.Database.SSLMode,
+	)
+
+	// Criar conexão SQL
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+
+	// Configurar pool de conexões
+	sqldb.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	sqldb.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	sqldb.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
+
+	// Criar instância Bun
+	db := bun.NewDB(sqldb, pgdialect.New())
+
+	// Logs do Bun desabilitados - usando logger centralizado
+
+	// Testar conexão
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		sqldb.Close()
+		return nil, fmt.Errorf("erro ao conectar com banco de dados: %w", err)
+	}
+
+	bunDB := &BunDB{
+		db:     db,
+		logger: logger.Get(),
+	}
+
+	// Executar auto-migration
+	if err := bunDB.AutoMigrate(ctx); err != nil {
+		sqldb.Close()
+		return nil, fmt.Errorf("erro ao executar auto-migration: %w", err)
+	}
+
+	logger.WithFields(map[string]interface{}{
+		"component": "database",
+		"driver":    "postgresql",
+		"status":    "connected",
+	}).Info().Msg("🗄️ Conexão PostgreSQL OK")
+	return bunDB, nil
+}
+
+// GetDB retorna a instância do Bun DB
+func (d *BunDB) GetDB() *bun.DB {
+	return d.db
+}
+
+// GetSQLDB retorna a instância do sql.DB subjacente
+func (d *BunDB) GetSQLDB() *sql.DB {
+	return d.db.DB
+}
+
+// Ping testa a conexão com o banco
+func (d *BunDB) Ping() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return d.db.PingContext(ctx)
+}
+
+// Close fecha a conexão com o banco
+func (d *BunDB) Close() error {
+	if d.db != nil {
+		d.logger.Info().Msg("Fechando banco Bun")
+		return d.db.Close()
+	}
+	return nil
+}
+
+// AutoMigrate executa as migrations automáticas baseadas nas structs
+func (d *BunDB) AutoMigrate(ctx context.Context) error {
+	d.logger.WithFields(map[string]interface{}{
+		"component": "database",
+		"operation": "migration",
+	}).Info().Msg("🔄 Executando auto-migration")
+
+	// Registrar modelos
+	models := []interface{}{
+		(*session.Session)(nil),
+		(*message.Message)(nil),
+		(*chat.Chat)(nil),
+		(*contact.Contact)(nil),
+	}
+
+	// Criar tabelas para cada modelo usando apenas Bun ORM
+	for _, model := range models {
+		if _, err := d.db.NewCreateTable().Model(model).IfNotExists().Exec(ctx); err != nil {
+			return fmt.Errorf("erro ao criar tabela para modelo %T: %w", model, err)
+		}
+	}
+
+	d.logger.WithFields(map[string]interface{}{
+		"component": "database",
+		"operation": "migration",
+		"status":    "completed",
+	}).Info().Msg("✅ Auto-migration concluída")
+	return nil
+}
 
 // Server representa o servidor HTTP da aplicação
 type Server struct {
 	config         *config.Config
 	httpServer     *http.Server
 	logger         *logger.Logger
-	db             *database.DB
+	bunDB          *BunDB
 	storeManager   *whatsapp.StoreManager
 	whatsappClient *whatsapp.WhatsAppClient // Singleton instance
 }
@@ -44,39 +177,46 @@ func New(cfg *config.Config) (*Server, error) {
 		gin.SetMode(gin.DebugMode)
 	}
 
-	// Conectar ao banco de dados
-	dbConfig := &database.Config{
-		Host:            cfg.Database.Host,
-		Port:            5432, // Converter string para int
-		User:            cfg.Database.User,
-		Password:        cfg.Database.Password,
-		DBName:          cfg.Database.Name,
-		SSLMode:         cfg.Database.SSLMode,
-		MaxOpenConns:    cfg.Database.MaxOpenConns,
-		MaxIdleConns:    cfg.Database.MaxIdleConns,
-		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
-	}
-
-	db, err := database.NewDB(dbConfig, appLogger.GetZerolog())
+	// Conectar ao banco de dados usando Bun ORM
+	bunDB, err := NewBunDB(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao conectar com banco de dados: %w", err)
+		return nil, fmt.Errorf("erro ao conectar com banco de dados Bun: %w", err)
 	}
 
 	// Inicializar store manager do WhatsApp
-	storeManager, err := whatsapp.NewStoreManager(db.GetDB(), appLogger.GetZerolog())
+	storeManager, err := whatsapp.NewStoreManager(bunDB.GetSQLDB(), appLogger.GetZerolog())
 	if err != nil {
 		return nil, fmt.Errorf("erro ao inicializar store manager do WhatsApp: %w", err)
 	}
 
-	// Criar repositórios e cliente WhatsApp (singleton)
-	sessionRepo := repository.NewSessionRepository(db.GetDB(), appLogger.GetZerolog())
-	eventHandler := whatsapp.NewSessionEventHandler(sessionRepo, appLogger.GetZerolog())
-	whatsappClient := whatsapp.NewWhatsAppClient(storeManager.GetContainer(), sessionRepo, appLogger.GetZerolog(), eventHandler)
+	// Criar repositórios Bun
+	sessionRepo := repository.NewSessionRepository(bunDB.GetDB())
+	messageRepo := repository.NewMessageRepository(bunDB.GetDB())
+	chatRepo := repository.NewChatRepository(bunDB.GetDB())
+	contactRepo := repository.NewContactRepository(bunDB.GetDB())
+
+	// Criar cliente MinIO se habilitado
+	var minioClient *storage.MinIOClient
+	if cfg.MinIO.Enabled {
+		var err error
+		minioClient, err = storage.NewMinIOClient(&cfg.MinIO)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao criar cliente MinIO: %w", err)
+		}
+	}
+
+	// Criar handlers de eventos (MediaDownloader será configurado dinamicamente)
+	sessionHandler := whatsapp.NewSessionEventHandler(sessionRepo)
+	storageHandler := whatsapp.NewStorageHandler(messageRepo, chatRepo, contactRepo, nil)
+	compositeHandler := whatsapp.NewCompositeEventHandler(sessionHandler, storageHandler)
+
+	// Criar cliente WhatsApp (singleton)
+	whatsappClient := whatsapp.NewWhatsAppClient(storeManager.GetContainer(), sessionRepo, compositeHandler, minioClient)
 
 	server := &Server{
 		config:         cfg,
 		logger:         appLogger,
-		db:             db,
+		bunDB:          bunDB,
 		storeManager:   storeManager,
 		whatsappClient: whatsappClient,
 	}
@@ -96,47 +236,35 @@ func New(cfg *config.Config) (*Server, error) {
 	return server, nil
 }
 
-// setupRoutes configura todas as rotas da aplicação
+// setupRoutes configura todas as rotas da aplicação usando o router completo
 func (s *Server) setupRoutes() *gin.Engine {
-	// Usar repositórios já criados
-	sessionRepo := repository.NewSessionRepository(s.db.GetDB(), s.logger.GetZerolog())
+	// Criar repositórios
+	sessionRepo := repository.NewSessionRepository(s.bunDB.GetDB())
+	messageRepo := repository.NewMessageRepository(s.bunDB.GetDB())
 
-	// Usar cliente WhatsApp singleton
-	whatsappClient := s.whatsappClient
+	// Criar use cases
+	sendTextUseCase := messageUseCase.NewSendTextUseCase(messageRepo, sessionRepo, s.whatsappClient)
+	sendMediaUseCase := messageUseCase.NewSendMediaUseCase(messageRepo, sessionRepo, s.whatsappClient)
 
-	// Criar repositórios de mensagem
-	messageRepo := repository.NewMessageRepository(s.db.GetDB(), s.logger.GetZerolog())
-
-	// Criar use cases de sessão
-	createUseCase := session.NewCreateUseCase(sessionRepo, s.logger.GetZerolog())
-	connectUseCase := session.NewConnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
-	disconnectUseCase := session.NewDisconnectUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
-	listUseCase := session.NewListUseCase(sessionRepo, s.logger.GetZerolog())
-	getStatusUseCase := session.NewGetStatusUseCase(sessionRepo, whatsappClient, s.logger.GetZerolog())
-
-	// Criar use cases de mensagem
-	sendTextUseCase := message.NewSendTextUseCase(messageRepo, sessionRepo, whatsappClient, s.logger.GetZerolog())
-	sendMediaUseCase := message.NewSendMediaUseCase(messageRepo, sessionRepo, whatsappClient, s.logger.GetZerolog())
+	createSessionUseCase := sessionUseCase.NewCreateUseCase(sessionRepo)
+	connectSessionUseCase := sessionUseCase.NewConnectUseCase(sessionRepo, s.whatsappClient)
+	disconnectSessionUseCase := sessionUseCase.NewDisconnectUseCase(sessionRepo, s.whatsappClient)
+	listSessionUseCase := sessionUseCase.NewListUseCase(sessionRepo)
+	getStatusSessionUseCase := sessionUseCase.NewGetStatusUseCase(sessionRepo, s.whatsappClient)
 
 	// Criar handlers
-	healthHandler := handlers.NewHealthHandler(s.logger.GetZerolog(), "1.0.0")
+	messageHandler := handlers.NewMessageHandler(sendTextUseCase, sendMediaUseCase)
 	sessionHandler := handlers.NewSessionHandler(
-		createUseCase,
-		connectUseCase,
-		disconnectUseCase,
-		listUseCase,
-		getStatusUseCase,
-		s.logger.GetZerolog(),
+		createSessionUseCase,
+		connectSessionUseCase,
+		disconnectSessionUseCase,
+		listSessionUseCase,
+		getStatusSessionUseCase,
 	)
-	messageHandler := handlers.NewMessageHandler(
-		sendTextUseCase,
-		sendMediaUseCase,
-		s.logger.GetZerolog(),
-	)
+	healthHandler := handlers.NewHealthHandler("1.0.0")
 
 	// Configurar router
 	routerConfig := router.Config{
-		Logger:          s.logger.GetZerolog(),
 		APIKey:          s.config.Auth.APIKey,
 		RateLimitReqs:   s.config.RateLimit.Requests,
 		RateLimitWindow: s.config.RateLimit.Window.String(),
@@ -145,17 +273,18 @@ func (s *Server) setupRoutes() *gin.Engine {
 		CORSHeaders:     s.config.CORS.AllowedHeaders,
 	}
 
-	// Criar router com todos os handlers
-	r := router.NewRouter(routerConfig, sessionHandler, messageHandler, healthHandler)
-	return r.Setup()
+	appRouter := router.NewRouter(routerConfig, sessionHandler, messageHandler, healthHandler)
+	return appRouter.Setup()
 }
 
 // Start inicia o servidor HTTP
 func (s *Server) Start() error {
-	s.logger.Info().
-		Str("address", s.config.GetServerAddress()).
-		Str("env", s.config.Server.Env).
-		Msg("Iniciando servidor HTTP")
+	s.logger.WithFields(map[string]interface{}{
+		"component": "server",
+		"protocol":  "http",
+		"address":   s.config.GetServerAddress(),
+		"env":       s.config.Server.Env,
+	}).Info().Msg("🌐 Iniciando HTTP server")
 
 	// Reconectar sessões ativas automaticamente
 	if err := s.connectActiveSessionsOnStartup(); err != nil {
@@ -174,13 +303,17 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	s.logger.Info().
-		Str("address", s.config.GetServerAddress()).
-		Msg("Servidor HTTP iniciado com sucesso")
+	s.logger.WithFields(map[string]interface{}{
+		"component": "server",
+		"protocol":  "http",
+		"address":   s.config.GetServerAddress(),
+		"env":       s.config.Server.Env,
+		"status":    "running",
+	}).Info().Msg("🚀 Server iniciado!")
 
 	// Aguardar sinal de parada
 	<-quit
-	s.logger.Info().Msg("Recebido sinal de parada, iniciando shutdown graceful...")
+	s.logger.Info().Msg("Iniciando shutdown graceful...")
 
 	return s.Stop()
 }
@@ -193,29 +326,29 @@ func (s *Server) Stop() error {
 
 	s.logger.Info().
 		Dur("timeout", s.config.Timeout.Shutdown).
-		Msg("Iniciando shutdown do servidor HTTP")
+		Msg("Shutdown HTTP server")
 
 	// Parar servidor HTTP
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		s.logger.Error().Err(err).Msg("Erro durante shutdown do servidor HTTP")
+		s.logger.Error().Err(err).Msg("Erro shutdown HTTP")
 		return err
 	}
 
 	// Fechar store manager do WhatsApp
 	if s.storeManager != nil {
 		if err := s.storeManager.Close(); err != nil {
-			s.logger.Error().Err(err).Msg("Erro ao fechar store manager do WhatsApp")
+			s.logger.Error().Err(err).Msg("Erro fechar WhatsApp store")
 		}
 	}
 
-	// Fechar conexão com banco de dados
-	if s.db != nil {
-		if err := s.db.Close(); err != nil {
-			s.logger.Error().Err(err).Msg("Erro ao fechar conexão com banco de dados")
+	// Fechar conexão com banco de dados Bun
+	if s.bunDB != nil {
+		if err := s.bunDB.Close(); err != nil {
+			s.logger.Error().Err(err).Msg("Erro fechar banco")
 		}
 	}
 
-	s.logger.Info().Msg("Servidor parado com sucesso")
+	s.logger.Info().Msg("Server parado")
 	return nil
 }
 
@@ -228,9 +361,9 @@ func (s *Server) Health() map[string]interface{} {
 		"env":       s.config.Server.Env,
 	}
 
-	// Verificar conexão com banco de dados
-	if s.db != nil {
-		if err := s.db.Ping(); err != nil {
+	// Verificar conexão com banco de dados Bun
+	if s.bunDB != nil {
+		if err := s.bunDB.Ping(); err != nil {
 			health["database"] = map[string]interface{}{
 				"status": "unhealthy",
 				"error":  err.Error(),
@@ -256,14 +389,18 @@ func (s *Server) GetLogger() *logger.Logger {
 	return s.logger
 }
 
-// GetDB retorna a instância do banco de dados
-func (s *Server) GetDB() *database.DB {
-	return s.db
+// GetBunDB retorna a instância do banco de dados Bun
+func (s *Server) GetBunDB() *BunDB {
+	return s.bunDB
 }
 
 // connectActiveSessionsOnStartup reconecta sessões ativas automaticamente
 func (s *Server) connectActiveSessionsOnStartup() error {
-	// Usar cliente WhatsApp singleton
+	if s.whatsappClient == nil {
+		s.logger.Info().Msg("WhatsApp client não inicializado, pulando reconexão automática")
+		return nil
+	}
+
 	ctx := context.Background()
 	return s.whatsappClient.ConnectOnStartup(ctx)
 }

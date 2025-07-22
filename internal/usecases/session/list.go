@@ -6,8 +6,6 @@ import (
 
 	"zapcore/internal/domain/session"
 	"zapcore/pkg/logger"
-
-	"github.com/rs/zerolog"
 )
 
 // ListUseCase representa o caso de uso para listar sessões
@@ -17,10 +15,10 @@ type ListUseCase struct {
 }
 
 // NewListUseCase cria uma nova instância do caso de uso
-func NewListUseCase(sessionRepo session.Repository, zeroLogger zerolog.Logger) *ListUseCase {
+func NewListUseCase(sessionRepo session.Repository) *ListUseCase {
 	return &ListUseCase{
 		sessionRepo: sessionRepo,
-		logger:      logger.NewFromZerolog(zeroLogger),
+		logger:      logger.Get(),
 	}
 }
 
@@ -62,7 +60,7 @@ func (uc *ListUseCase) Execute(ctx context.Context, req *ListRequest) (*ListResp
 		filters.Offset = 0
 	}
 	if filters.OrderBy == "" {
-		filters.OrderBy = "created_at"
+		filters.OrderBy = "createdat"
 	}
 	if filters.OrderDir == "" {
 		filters.OrderDir = "DESC"

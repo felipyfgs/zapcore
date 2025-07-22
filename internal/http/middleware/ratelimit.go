@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"zapcore/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 )
 
 // RateLimitConfig representa a configuração do rate limiting
@@ -15,17 +15,17 @@ type RateLimitConfig struct {
 	Window    time.Duration             // Janela de tempo
 	KeyFunc   func(*gin.Context) string // Função para extrair a chave (IP, API Key, etc)
 	SkipPaths []string                  // Paths que devem ser ignorados
-	Logger    zerolog.Logger
+	Logger    *logger.Logger
 }
 
 // DefaultRateLimitConfig retorna a configuração padrão do rate limiting
-func DefaultRateLimitConfig(requests int, window time.Duration, logger zerolog.Logger) RateLimitConfig {
+func DefaultRateLimitConfig(requests int, window time.Duration) RateLimitConfig {
 	return RateLimitConfig{
 		Requests:  requests,
 		Window:    window,
 		KeyFunc:   func(c *gin.Context) string { return c.ClientIP() },
 		SkipPaths: []string{"/health", "/ready", "/live"},
-		Logger:    logger,
+		Logger:    logger.Get(),
 	}
 }
 
@@ -158,7 +158,7 @@ func RateLimit(config RateLimitConfig) gin.HandlerFunc {
 }
 
 // APIKeyRateLimit cria um rate limiter baseado em API Key
-func APIKeyRateLimit(requests int, window time.Duration, logger zerolog.Logger) gin.HandlerFunc {
+func APIKeyRateLimit(requests int, window time.Duration) gin.HandlerFunc {
 	config := RateLimitConfig{
 		Requests: requests,
 		Window:   window,
@@ -180,7 +180,7 @@ func APIKeyRateLimit(requests int, window time.Duration, logger zerolog.Logger) 
 			return "api:" + apiKey
 		},
 		SkipPaths: []string{"/health", "/ready", "/live"},
-		Logger:    logger,
+		Logger:    logger.Get(),
 	}
 
 	return RateLimit(config)

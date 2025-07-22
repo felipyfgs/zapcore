@@ -2,8 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,54 +9,36 @@ import (
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 )
 
-// ChatRepository implementa o repositório de chats para PostgreSQL
+// ChatRepository implementa o repositório de chats usando Bun ORM
 type ChatRepository struct {
-	db     *sql.DB
+	db     *bun.DB
 	logger *logger.Logger
 }
 
 // NewChatRepository cria uma nova instância do repositório
-func NewChatRepository(db *sql.DB, zeroLogger zerolog.Logger) *ChatRepository {
+func NewChatRepository(db *bun.DB) *ChatRepository {
 	return &ChatRepository{
 		db:     db,
-		logger: logger.NewFromZerolog(zeroLogger),
+		logger: logger.Get(),
 	}
 }
 
 // Create cria um novo chat
 func (r *ChatRepository) Create(ctx context.Context, c *chat.Chat) error {
-	query := `
-		INSERT INTO zapcore_chats (
-			id, session_id, jid, name, type, last_message_time,
-			message_count, unread_count, is_muted, is_pinned, is_archived,
-			metadata, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-	`
-
-	metadataJSON, err := json.Marshal(c.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
+	// Garantir que timestamps estão definidos
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now()
+	}
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = time.Now()
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
-		c.ID,
-		c.SessionID,
-		c.JID,
-		c.Name,
-		c.Type,
-		c.LastMessageTime,
-		c.MessageCount,
-		c.UnreadCount,
-		c.IsMuted,
-		c.IsPinned,
-		c.IsArchived,
-		metadataJSON,
-		c.CreatedAt,
-		c.UpdatedAt,
-	)
+	_, err := r.db.NewInsert().
+		Model(c).
+		Exec(ctx)
 
 	if err != nil {
 		r.logger.Error().Err(err).Str("chat_jid", c.JID).Msg("Erro ao criar chat")
@@ -71,63 +51,48 @@ func (r *ChatRepository) Create(ctx context.Context, c *chat.Chat) error {
 
 // GetByID busca um chat pelo ID
 func (r *ChatRepository) GetByID(ctx context.Context, id uuid.UUID) (*chat.Chat, error) {
-	query := `
-		SELECT id, session_id, jid, name, type, last_message_time,
-			   message_count, unread_count, is_muted, is_pinned, is_archived,
-			   metadata, created_at, updated_at
-		FROM zapcore_chats
-		WHERE id = $1
-	`
+	c := new(chat.Chat)
+	err := r.db.NewSelect().
+		Model(c).
+		Where(`"id" = ?`, id).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, id)
-	return r.scanChat(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, chat.ErrChatNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar chat por ID: %w", err)
+	}
+
+	return c, nil
 }
 
 // GetByJID busca um chat pelo JID e session ID
 func (r *ChatRepository) GetByJID(ctx context.Context, sessionID uuid.UUID, jid string) (*chat.Chat, error) {
-	query := `
-		SELECT id, session_id, jid, name, type, last_message_time,
-			   message_count, unread_count, is_muted, is_pinned, is_archived,
-			   metadata, created_at, updated_at
-		FROM zapcore_chats
-		WHERE session_id = $1 AND jid = $2
-	`
+	c := new(chat.Chat)
+	err := r.db.NewSelect().
+		Model(c).
+		Where(`"sessionId" = ? AND "jid" = ?`, sessionID, jid).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, sessionID, jid)
-	return r.scanChat(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, chat.ErrChatNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar chat por JID: %w", err)
+	}
+
+	return c, nil
 }
 
 // Update atualiza um chat
 func (r *ChatRepository) Update(ctx context.Context, c *chat.Chat) error {
-	query := `
-		UPDATE zapcore_chats 
-		SET name = $3, type = $4, last_message_time = $5, message_count = $6,
-			unread_count = $7, is_muted = $8, is_pinned = $9, is_archived = $10,
-			metadata = $11, updated_at = $12
-		WHERE session_id = $1 AND jid = $2
-	`
-
-	metadataJSON, err := json.Marshal(c.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
-	}
-
 	c.UpdatedAt = time.Now()
 
-	result, err := r.db.ExecContext(ctx, query,
-		c.SessionID,
-		c.JID,
-		c.Name,
-		c.Type,
-		c.LastMessageTime,
-		c.MessageCount,
-		c.UnreadCount,
-		c.IsMuted,
-		c.IsPinned,
-		c.IsArchived,
-		metadataJSON,
-		c.UpdatedAt,
-	)
+	result, err := r.db.NewUpdate().
+		Model(c).
+		Where(`"id" = ?`, c.ID).
+		Exec(ctx)
 
 	if err != nil {
 		r.logger.Error().Err(err).Str("chat_jid", c.JID).Msg("Erro ao atualizar chat")
@@ -148,12 +113,14 @@ func (r *ChatRepository) Update(ctx context.Context, c *chat.Chat) error {
 }
 
 // Delete remove um chat
-func (r *ChatRepository) Delete(ctx context.Context, sessionID uuid.UUID, jid string) error {
-	query := `DELETE FROM zapcore_chats WHERE session_id = $1 AND jid = $2`
+func (r *ChatRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.NewDelete().
+		Model((*chat.Chat)(nil)).
+		Where(`"id" = ?`, id).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, sessionID, jid)
 	if err != nil {
-		r.logger.Error().Err(err).Str("chat_jid", jid).Msg("Erro ao deletar chat")
+		r.logger.Error().Err(err).Str("chat_id", id.String()).Msg("Erro ao deletar chat")
 		return fmt.Errorf("erro ao deletar chat: %w", err)
 	}
 
@@ -166,60 +133,132 @@ func (r *ChatRepository) Delete(ctx context.Context, sessionID uuid.UUID, jid st
 		return chat.ErrChatNotFound
 	}
 
-	r.logger.Info().Str("chat_jid", jid).Msg("Chat deletado com sucesso")
+	r.logger.Info().Str("chat_id", id.String()).Msg("Chat deletado com sucesso")
 	return nil
+}
+
+// List retorna uma lista de chats com filtros
+func (r *ChatRepository) List(ctx context.Context, filters chat.ListFilters) ([]*chat.Chat, error) {
+	query := r.db.NewSelect().Model(&[]*chat.Chat{})
+
+	// Aplicar filtros se fornecidos
+	if filters.SessionID != nil {
+		query = query.Where(`"sessionId" = ?`, *filters.SessionID)
+	}
+
+	// Definir limite padrão
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var chats []*chat.Chat
+	err := query.
+		OrderExpr(`"lastMessageTime" DESC NULLS LAST`).
+		Limit(limit).
+		Offset(filters.Offset).
+		Scan(ctx, &chats)
+
+	if err != nil {
+		r.logger.Error().Err(err).Msg("Erro ao listar chats")
+		return nil, fmt.Errorf("erro ao listar chats: %w", err)
+	}
+
+	return chats, nil
 }
 
 // ListBySessionID lista chats por session ID com paginação
 func (r *ChatRepository) ListBySessionID(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*chat.Chat, error) {
-	query := `
-		SELECT id, session_id, jid, name, type, last_message_time,
-			   message_count, unread_count, is_muted, is_pinned, is_archived,
-			   metadata, created_at, updated_at
-		FROM zapcore_chats
-		WHERE session_id = $1
-		ORDER BY 
-			CASE WHEN is_pinned THEN 0 ELSE 1 END,
-			last_message_time DESC NULLS LAST
-		LIMIT $2 OFFSET $3
-	`
+	var chats []*chat.Chat
 
-	rows, err := r.db.QueryContext(ctx, query, sessionID, limit, offset)
+	err := r.db.NewSelect().
+		Model(&chats).
+		Where(`"sessionId" = ?`, sessionID).
+		OrderExpr(`CASE WHEN "isPinned" THEN 0 ELSE 1 END, "lastMessageTime" DESC NULLS LAST`).
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+
 	if err != nil {
 		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao listar chats")
 		return nil, fmt.Errorf("erro ao listar chats: %w", err)
 	}
-	defer rows.Close()
 
-	return r.scanChats(rows)
+	return chats, nil
 }
 
-// CountBySessionID conta chats por session ID
-func (r *ChatRepository) CountBySessionID(ctx context.Context, sessionID uuid.UUID) (int64, error) {
-	query := `SELECT COUNT(*) FROM zapcore_chats WHERE session_id = $1`
+// ListByType lista chats por tipo
+func (r *ChatRepository) ListByType(ctx context.Context, sessionID uuid.UUID, chatType chat.ChatType, limit, offset int) ([]*chat.Chat, error) {
+	var chats []*chat.Chat
 
-	var count int64
-	err := r.db.QueryRowContext(ctx, query, sessionID).Scan(&count)
+	err := r.db.NewSelect().
+		Model(&chats).
+		Where(`"sessionId" = ? AND "chatType" = ?`, sessionID, chatType).
+		OrderExpr(`"lastMessageTime" DESC NULLS LAST`).
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+
 	if err != nil {
-		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao contar chats")
-		return 0, fmt.Errorf("erro ao contar chats: %w", err)
+		r.logger.Error().Err(err).
+			Str("session_id", sessionID.String()).
+			Str("chat_type", string(chatType)).
+			Msg("Erro ao listar chats por tipo")
+		return nil, fmt.Errorf("erro ao listar chats por tipo: %w", err)
 	}
 
-	return count, nil
+	return chats, nil
 }
 
-// UpdateUnreadCount atualiza apenas o contador de mensagens não lidas
-func (r *ChatRepository) UpdateUnreadCount(ctx context.Context, sessionID uuid.UUID, jid string, count int) error {
-	query := `
-		UPDATE zapcore_chats 
-		SET unread_count = $3, updated_at = NOW()
-		WHERE session_id = $1 AND jid = $2
-	`
+// ListArchived lista chats arquivados
+func (r *ChatRepository) ListArchived(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*chat.Chat, error) {
+	var chats []*chat.Chat
 
-	result, err := r.db.ExecContext(ctx, query, sessionID, jid, count)
+	err := r.db.NewSelect().
+		Model(&chats).
+		Where(`"sessionId" = ? AND "isArchived" = ?`, sessionID, true).
+		OrderExpr(`"lastMessageTime" DESC NULLS LAST`).
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+
 	if err != nil {
-		r.logger.Error().Err(err).Str("chat_jid", jid).Msg("Erro ao atualizar contador de não lidas")
-		return fmt.Errorf("erro ao atualizar contador de não lidas: %w", err)
+		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao listar chats arquivados")
+		return nil, fmt.Errorf("erro ao listar chats arquivados: %w", err)
+	}
+
+	return chats, nil
+}
+
+// ListPinned lista chats fixados
+func (r *ChatRepository) ListPinned(ctx context.Context, sessionID uuid.UUID) ([]*chat.Chat, error) {
+	var chats []*chat.Chat
+
+	err := r.db.NewSelect().
+		Model(&chats).
+		Where(`"sessionId" = ? AND "isPinned" = ?`, sessionID, true).
+		OrderExpr(`"lastMessageTime" DESC NULLS LAST`).
+		Scan(ctx)
+
+	if err != nil {
+		r.logger.Error().Err(err).Str("session_id", sessionID.String()).Msg("Erro ao listar chats fixados")
+		return nil, fmt.Errorf("erro ao listar chats fixados: %w", err)
+	}
+
+	return chats, nil
+}
+
+// UpdateLastMessage atualiza o timestamp da última mensagem
+func (r *ChatRepository) UpdateLastMessage(ctx context.Context, sessionID uuid.UUID, jid string, timestamp time.Time) error {
+	result, err := r.db.NewUpdate().
+		Model((*chat.Chat)(nil)).
+		Set(`"lastMessageTime" = ?`, timestamp).
+		Set(`"updatedAt" = ?`, time.Now()).
+		Where(`"sessionId" = ? AND "jid" = ?`, sessionID, jid).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("erro ao atualizar última mensagem do chat: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -234,143 +273,135 @@ func (r *ChatRepository) UpdateUnreadCount(ctx context.Context, sessionID uuid.U
 	return nil
 }
 
-// Upsert cria ou atualiza um chat
-func (r *ChatRepository) Upsert(ctx context.Context, c *chat.Chat) error {
-	query := `
-		INSERT INTO zapcore_chats (
-			id, session_id, jid, name, type, last_message_time,
-			message_count, unread_count, is_muted, is_pinned, is_archived,
-			metadata, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (session_id, jid) 
-		DO UPDATE SET
-			name = EXCLUDED.name,
-			type = EXCLUDED.type,
-			last_message_time = EXCLUDED.last_message_time,
-			message_count = EXCLUDED.message_count,
-			unread_count = EXCLUDED.unread_count,
-			is_muted = EXCLUDED.is_muted,
-			is_pinned = EXCLUDED.is_pinned,
-			is_archived = EXCLUDED.is_archived,
-			metadata = EXCLUDED.metadata,
-			updated_at = EXCLUDED.updated_at
-	`
+// IncrementMessageCount incrementa o contador de mensagens
+func (r *ChatRepository) IncrementMessageCount(ctx context.Context, sessionID uuid.UUID, jid string) error {
+	result, err := r.db.NewUpdate().
+		Model((*chat.Chat)(nil)).
+		Set("messageCount = messageCount + 1").
+		Set(`"updatedAt" = ?`, time.Now()).
+		Where(`"sessionId" = ? AND "jid" = ?`, sessionID, jid).
+		Exec(ctx)
 
-	metadataJSON, err := json.Marshal(c.Metadata)
 	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
+		return fmt.Errorf("erro ao incrementar contador de mensagens: %w", err)
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
-		c.ID,
-		c.SessionID,
-		c.JID,
-		c.Name,
-		c.Type,
-		c.LastMessageTime,
-		c.MessageCount,
-		c.UnreadCount,
-		c.IsMuted,
-		c.IsPinned,
-		c.IsArchived,
-		metadataJSON,
-		c.CreatedAt,
-		c.UpdatedAt,
-	)
-
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		r.logger.Error().Err(err).Str("chat_jid", c.JID).Msg("Erro ao fazer upsert do chat")
-		return fmt.Errorf("erro ao fazer upsert do chat: %w", err)
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return chat.ErrChatNotFound
 	}
 
 	return nil
 }
 
-// scanChat converte uma linha do banco em uma entidade Chat
-func (r *ChatRepository) scanChat(row *sql.Row) (*chat.Chat, error) {
-	var c chat.Chat
-	var metadataJSON []byte
-
-	err := row.Scan(
-		&c.ID,
-		&c.SessionID,
-		&c.JID,
-		&c.Name,
-		&c.Type,
-		&c.LastMessageTime,
-		&c.MessageCount,
-		&c.UnreadCount,
-		&c.IsMuted,
-		&c.IsPinned,
-		&c.IsArchived,
-		&metadataJSON,
-		&c.CreatedAt,
-		&c.UpdatedAt,
-	)
+// MarkAsRead marca todas as mensagens como lidas
+func (r *ChatRepository) MarkAsRead(ctx context.Context, sessionID uuid.UUID, jid string) error {
+	result, err := r.db.NewUpdate().
+		Model((*chat.Chat)(nil)).
+		Set("\"unreadCount\" = ?", 0).
+		Set("\"updatedAt\" = ?", time.Now()).
+		Where("\"sessionId\" = ? AND \"jid\" = ?", sessionID, jid).
+		Exec(ctx)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, chat.ErrChatNotFound
-		}
-		return nil, fmt.Errorf("erro ao fazer scan do chat: %w", err)
+		return fmt.Errorf("erro ao marcar chat como lido: %w", err)
 	}
 
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &c.Metadata); err != nil {
-			r.logger.Warn().Err(err).Msg("Erro ao deserializar metadata do chat")
-			c.Metadata = make(map[string]any)
-		}
-	} else {
-		c.Metadata = make(map[string]any)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
 	}
 
-	return &c, nil
+	if rowsAffected == 0 {
+		return chat.ErrChatNotFound
+	}
+
+	return nil
 }
 
-// scanChats converte múltiplas linhas do banco em entidades Chat
-func (r *ChatRepository) scanChats(rows *sql.Rows) ([]*chat.Chat, error) {
-	var chats []*chat.Chat
+// Count conta o total de chats
+func (r *ChatRepository) Count(ctx context.Context, sessionID uuid.UUID) (int64, error) {
+	count, err := r.db.NewSelect().
+		Model((*chat.Chat)(nil)).
+		Where("\"sessionId\" = ?", sessionID).
+		Count(ctx)
 
-	for rows.Next() {
-		var c chat.Chat
-		var metadataJSON []byte
-
-		err := rows.Scan(
-			&c.ID,
-			&c.SessionID,
-			&c.JID,
-			&c.Name,
-			&c.Type,
-			&c.LastMessageTime,
-			&c.MessageCount,
-			&c.UnreadCount,
-			&c.IsMuted,
-			&c.IsPinned,
-			&c.IsArchived,
-			&metadataJSON,
-			&c.CreatedAt,
-			&c.UpdatedAt,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("erro ao fazer scan do chat: %w", err)
-		}
-
-		if len(metadataJSON) > 0 {
-			if err := json.Unmarshal(metadataJSON, &c.Metadata); err != nil {
-				r.logger.Warn().Err(err).Msg("Erro ao deserializar metadata do chat")
-				c.Metadata = make(map[string]any)
-			}
-		} else {
-			c.Metadata = make(map[string]any)
-		}
-
-		chats = append(chats, &c)
+	if err != nil {
+		return 0, fmt.Errorf("erro ao contar chats: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("erro ao iterar sobre os chats: %w", err)
+	return int64(count), nil
+}
+
+// CountUnread conta chats com mensagens não lidas
+func (r *ChatRepository) CountUnread(ctx context.Context, sessionID uuid.UUID) (int64, error) {
+	count, err := r.db.NewSelect().
+		Model((*chat.Chat)(nil)).
+		Where(`"sessionId" = ? AND "unreadCount" > ?`, sessionID, 0).
+		Count(ctx)
+
+	if err != nil {
+		return 0, fmt.Errorf("erro ao contar chats não lidos: %w", err)
 	}
 
-	return chats, nil
+	return int64(count), nil
+}
+
+// ExistsByJID verifica se um chat existe pelo JID
+func (r *ChatRepository) ExistsByJID(ctx context.Context, sessionID uuid.UUID, jid string) (bool, error) {
+	exists, err := r.db.NewSelect().
+		Model((*chat.Chat)(nil)).
+		Where("\"sessionId\" = ? AND \"jid\" = ?", sessionID, jid).
+		Exists(ctx)
+
+	if err != nil {
+		return false, fmt.Errorf("erro ao verificar existência do chat: %w", err)
+	}
+
+	return exists, nil
+}
+
+// IncrementUnreadCount incrementa o contador de mensagens não lidas
+func (r *ChatRepository) IncrementUnreadCount(ctx context.Context, sessionID uuid.UUID, jid string) error {
+	result, err := r.db.NewUpdate().
+		Model((*chat.Chat)(nil)).
+		Set("unreadCount = unreadCount + 1").
+		Set(`"updatedAt" = ?`, time.Now()).
+		Where(`"sessionId" = ? AND "jid" = ?`, sessionID, jid).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("erro ao incrementar contador de não lidas: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return chat.ErrChatNotFound
+	}
+
+	return nil
+}
+
+// GetBySessionID implementa a interface chat.Repository
+func (r *ChatRepository) GetBySessionID(ctx context.Context, sessionID uuid.UUID, filters chat.ListFilters) ([]*chat.Chat, error) {
+	// Usar o filtro SessionID
+	filters.SessionID = &sessionID
+	return r.List(ctx, filters)
+}
+
+// GetUnreadCount retorna total de chats não lidos (implementa interface)
+func (r *ChatRepository) GetUnreadCount(ctx context.Context, sessionID uuid.UUID) (int, error) {
+	count, err := r.CountUnread(ctx, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }

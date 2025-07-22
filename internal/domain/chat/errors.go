@@ -41,4 +41,3 @@ func NewChatError(chatID uuid.UUID, operation string, err error) *ChatError {
 		Err:       err,
 	}
 }
-

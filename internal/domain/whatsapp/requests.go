@@ -9,7 +9,7 @@ import (
 
 // SendTextRequest representa uma requisição de envio de texto
 type SendTextRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	ToJID     string    `json:"to_jid" validate:"required"`
 	Content   string    `json:"content" validate:"required"`
 	ReplyToID string    `json:"reply_to_id,omitempty"`
@@ -17,46 +17,50 @@ type SendTextRequest struct {
 
 // SendImageRequest representa uma requisição de envio de imagem
 type SendImageRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
-	ToJID     string    `json:"to_jid" validate:"required"`
-	ImageData io.Reader `json:"-"`
-	ImageURL  string    `json:"image_url,omitempty"`
-	Caption   string    `json:"caption,omitempty"`
-	ReplyToID string    `json:"reply_to_id,omitempty"`
-	MimeType  string    `json:"mime_type,omitempty"`
-	FileName  string    `json:"file_name,omitempty"`
+	SessionID  uuid.UUID `json:"sessionId" validate:"required"`
+	ToJID      string    `json:"to_jid" validate:"required"`
+	ImageData  io.Reader `json:"-"`
+	ImageURL   string    `json:"image_url,omitempty"`
+	Base64Data string    `json:"base64_data,omitempty"` // Dados em base64
+	Caption    string    `json:"caption,omitempty"`
+	ReplyToID  string    `json:"reply_to_id,omitempty"`
+	MimeType   string    `json:"mime_type,omitempty"`
+	FileName   string    `json:"file_name,omitempty"`
 }
 
 // SendAudioRequest representa uma requisição de envio de áudio
 type SendAudioRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
-	ToJID     string    `json:"to_jid" validate:"required"`
-	AudioData io.Reader `json:"-"`
-	AudioURL  string    `json:"audio_url,omitempty"`
-	ReplyToID string    `json:"reply_to_id,omitempty"`
-	MimeType  string    `json:"mime_type,omitempty"`
-	FileName  string    `json:"file_name,omitempty"`
-	IsVoice   bool      `json:"is_voice,omitempty"`
+	SessionID  uuid.UUID `json:"sessionId" validate:"required"`
+	ToJID      string    `json:"to_jid" validate:"required"`
+	AudioData  io.Reader `json:"-"`
+	AudioURL   string    `json:"audio_url,omitempty"`
+	Base64Data string    `json:"base64_data,omitempty"` // Dados em base64
+	ReplyToID  string    `json:"reply_to_id,omitempty"`
+	MimeType   string    `json:"mime_type,omitempty"`
+	FileName   string    `json:"file_name,omitempty"`
+	IsVoice    bool      `json:"is_voice,omitempty"`
 }
 
 // SendVideoRequest representa uma requisição de envio de vídeo
 type SendVideoRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
-	ToJID     string    `json:"to_jid" validate:"required"`
-	VideoData io.Reader `json:"-"`
-	VideoURL  string    `json:"video_url,omitempty"`
-	Caption   string    `json:"caption,omitempty"`
-	ReplyToID string    `json:"reply_to_id,omitempty"`
-	MimeType  string    `json:"mime_type,omitempty"`
-	FileName  string    `json:"file_name,omitempty"`
+	SessionID  uuid.UUID `json:"sessionId" validate:"required"`
+	ToJID      string    `json:"to_jid" validate:"required"`
+	VideoData  io.Reader `json:"-"`
+	VideoURL   string    `json:"video_url,omitempty"`
+	Base64Data string    `json:"base64_data,omitempty"` // Dados em base64
+	Caption    string    `json:"caption,omitempty"`
+	ReplyToID  string    `json:"reply_to_id,omitempty"`
+	MimeType   string    `json:"mime_type,omitempty"`
+	FileName   string    `json:"file_name,omitempty"`
 }
 
 // SendDocumentRequest representa uma requisição de envio de documento
 type SendDocumentRequest struct {
-	SessionID    uuid.UUID `json:"session_id" validate:"required"`
+	SessionID    uuid.UUID `json:"sessionId" validate:"required"`
 	ToJID        string    `json:"to_jid" validate:"required"`
 	DocumentData io.Reader `json:"-"`
 	DocumentURL  string    `json:"document_url,omitempty"`
+	Base64Data   string    `json:"base64_data,omitempty"` // Dados em base64
 	FileName     string    `json:"file_name" validate:"required"`
 	Caption      string    `json:"caption,omitempty"`
 	ReplyToID    string    `json:"reply_to_id,omitempty"`
@@ -65,17 +69,18 @@ type SendDocumentRequest struct {
 
 // SendStickerRequest representa uma requisição de envio de sticker
 type SendStickerRequest struct {
-	SessionID   uuid.UUID `json:"session_id" validate:"required"`
+	SessionID   uuid.UUID `json:"sessionId" validate:"required"`
 	ToJID       string    `json:"to_jid" validate:"required"`
 	StickerData io.Reader `json:"-"`
 	StickerURL  string    `json:"sticker_url,omitempty"`
+	Base64Data  string    `json:"base64_data,omitempty"` // Dados em base64
 	ReplyToID   string    `json:"reply_to_id,omitempty"`
 	MimeType    string    `json:"mime_type,omitempty"`
 }
 
 // SendLocationRequest representa uma requisição de envio de localização
 type SendLocationRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	ToJID     string    `json:"to_jid" validate:"required"`
 	Latitude  float64   `json:"latitude" validate:"required"`
 	Longitude float64   `json:"longitude" validate:"required"`
@@ -86,7 +91,7 @@ type SendLocationRequest struct {
 
 // SendContactRequest representa uma requisição de envio de contato
 type SendContactRequest struct {
-	SessionID uuid.UUID      `json:"session_id" validate:"required"`
+	SessionID uuid.UUID      `json:"sessionId" validate:"required"`
 	ToJID     string         `json:"to_jid" validate:"required"`
 	Contacts  []ContactVCard `json:"contacts" validate:"required,min=1"`
 	ReplyToID string         `json:"reply_to_id,omitempty"`
@@ -102,7 +107,7 @@ type ContactVCard struct {
 
 // SendButtonsRequest representa uma requisição de envio de botões
 type SendButtonsRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	ToJID     string    `json:"to_jid" validate:"required"`
 	Text      string    `json:"text" validate:"required"`
 	Footer    string    `json:"footer,omitempty"`
@@ -118,7 +123,7 @@ type Button struct {
 
 // SendListRequest representa uma requisição de envio de lista
 type SendListRequest struct {
-	SessionID  uuid.UUID     `json:"session_id" validate:"required"`
+	SessionID  uuid.UUID     `json:"sessionId" validate:"required"`
 	ToJID      string        `json:"to_jid" validate:"required"`
 	Text       string        `json:"text" validate:"required"`
 	Footer     string        `json:"footer,omitempty"`
@@ -142,7 +147,7 @@ type ListRow struct {
 
 // SendPollRequest representa uma requisição de envio de enquete
 type SendPollRequest struct {
-	SessionID   uuid.UUID    `json:"session_id" validate:"required"`
+	SessionID   uuid.UUID    `json:"sessionId" validate:"required"`
 	ToJID       string       `json:"to_jid" validate:"required"`
 	Question    string       `json:"question" validate:"required"`
 	Options     []PollOption `json:"options" validate:"required,min=2,max=12"`
@@ -157,30 +162,30 @@ type PollOption struct {
 
 // EditMessageRequest representa uma requisição de edição de mensagem
 type EditMessageRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
-	MessageID string    `json:"message_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
+	MessageID string    `json:"messageId" validate:"required"`
 	NewText   string    `json:"new_text" validate:"required"`
 }
 
 // SendReactionRequest representa uma requisição para enviar reação
 type SendReactionRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	ChatJID   string    `json:"chat_jid" validate:"required"`
-	MessageID string    `json:"message_id" validate:"required"`
+	MessageID string    `json:"messageId" validate:"required"`
 	SenderJID string    `json:"sender_jid,omitempty"`
 	Reaction  string    `json:"reaction"` // emoji ou string vazia para remover
 }
 
 // RevokeMessageRequest representa uma requisição para revogar mensagem
 type RevokeMessageRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	ChatJID   string    `json:"chat_jid" validate:"required"`
-	MessageID string    `json:"message_id" validate:"required"`
+	MessageID string    `json:"messageId" validate:"required"`
 }
 
 // DownloadMediaRequest representa uma requisição para download de mídia
 type DownloadMediaRequest struct {
-	SessionID     uuid.UUID `json:"session_id" validate:"required"`
+	SessionID     uuid.UUID `json:"sessionId" validate:"required"`
 	DirectPath    string    `json:"direct_path" validate:"required"`
 	MediaKey      []byte    `json:"media_key" validate:"required"`
 	FileEncSHA256 []byte    `json:"file_enc_sha256" validate:"required"`
@@ -191,7 +196,7 @@ type DownloadMediaRequest struct {
 
 // UploadMediaRequest representa uma requisição para upload de mídia
 type UploadMediaRequest struct {
-	SessionID uuid.UUID `json:"session_id" validate:"required"`
+	SessionID uuid.UUID `json:"sessionId" validate:"required"`
 	MediaData io.Reader `json:"-"`
 	MediaType string    `json:"media_type" validate:"required"` // image, video, audio, document
 }
@@ -210,22 +215,22 @@ type UploadResponse struct {
 
 // MarkAsReadRequest representa uma requisição para marcar como lida
 type MarkAsReadRequest struct {
-	SessionID  uuid.UUID `json:"session_id" validate:"required"`
+	SessionID  uuid.UUID `json:"sessionId" validate:"required"`
 	ChatJID    string    `json:"chat_jid" validate:"required"`
-	MessageIDs []string  `json:"message_ids" validate:"required"`
+	MessageIDs []string  `json:"messageIds" validate:"required"`
 	Timestamp  time.Time `json:"timestamp"`
 	SenderJID  string    `json:"sender_jid,omitempty"`
 }
 
 // SendPresenceRequest representa uma requisição para enviar presença
 type SendPresenceRequest struct {
-	SessionID uuid.UUID    `json:"session_id" validate:"required"`
+	SessionID uuid.UUID    `json:"sessionId" validate:"required"`
 	State     PresenceType `json:"state" validate:"required"`
 }
 
 // SendChatPresenceRequest representa uma requisição para enviar presença no chat
 type SendChatPresenceRequest struct {
-	SessionID uuid.UUID         `json:"session_id"`
+	SessionID uuid.UUID         `json:"sessionId"`
 	ChatJID   string            `json:"chat_jid"`
 	State     ChatPresenceType  `json:"state"`
 	Media     ChatPresenceMedia `json:"media,omitempty"`
@@ -295,7 +300,7 @@ type GroupParticipantAddRequest struct {
 
 // CreateGroupRequest representa uma requisição para criar grupo
 type CreateGroupRequest struct {
-	SessionID       uuid.UUID `json:"session_id"`
+	SessionID       uuid.UUID `json:"sessionId"`
 	Name            string    `json:"name"`
 	Participants    []string  `json:"participants"`
 	CreateKey       string    `json:"create_key,omitempty"`
@@ -305,7 +310,7 @@ type CreateGroupRequest struct {
 
 // UpdateGroupParticipantsRequest representa uma requisição para atualizar participantes
 type UpdateGroupParticipantsRequest struct {
-	SessionID    uuid.UUID                    `json:"session_id"`
+	SessionID    uuid.UUID                    `json:"sessionId"`
 	GroupJID     string                       `json:"group_jid"`
 	Participants []string                     `json:"participants"`
 	Action       GroupParticipantChangeAction `json:"action"`
@@ -313,7 +318,7 @@ type UpdateGroupParticipantsRequest struct {
 
 // MessageResponse representa a resposta de envio de mensagem
 type MessageResponse struct {
-	MessageID string `json:"message_id"`
+	MessageID string `json:"messageId"`
 	Status    string `json:"status"`
 	Timestamp int64  `json:"timestamp"`
 	Error     string `json:"error,omitempty"`
@@ -325,7 +330,7 @@ type Contact struct {
 	Name         string `json:"name"`
 	NotifyName   string `json:"notify_name"`
 	PhoneNumber  string `json:"phone_number"`
-	IsBusiness   bool   `json:"is_business"`
+	IsBusiness   bool   `json:"isBusiness"`
 	IsMyContact  bool   `json:"is_my_contact"`
 	IsWAContact  bool   `json:"is_wa_contact"`
 	ProfilePicID string `json:"profile_pic_id"`
@@ -335,10 +340,10 @@ type Contact struct {
 type Chat struct {
 	JID             string    `json:"jid"`
 	Name            string    `json:"name"`
-	IsGroup         bool      `json:"is_group"`
+	IsGroup         bool      `json:"isGroup"`
 	LastMessageTime time.Time `json:"last_message_time"`
 	UnreadCount     int       `json:"unread_count"`
-	IsMuted         bool      `json:"is_muted"`
+	IsMuted         bool      `json:"isMuted"`
 	IsPinned        bool      `json:"is_pinned"`
 	IsArchived      bool      `json:"is_archived"`
 }

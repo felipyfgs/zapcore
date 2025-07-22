@@ -2,66 +2,43 @@ package repository
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"zapcore/internal/domain/session"
 	"zapcore/pkg/logger"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 )
 
-// SessionData representa os dados básicos de uma sessão para reconexão
-type SessionData struct {
-	ID   uuid.UUID
-	Name string
-	JID  string
-}
-
-// SessionRepository implementa o repositório de sessões
+// SessionRepository implementa o repositório de sessões usando Bun ORM
 type SessionRepository struct {
-	db     *sql.DB
+	db     *bun.DB
 	logger *logger.Logger
 }
 
 // NewSessionRepository cria uma nova instância do repositório
-func NewSessionRepository(db *sql.DB, zeroLogger zerolog.Logger) *SessionRepository {
+func NewSessionRepository(db *bun.DB) *SessionRepository {
 	return &SessionRepository{
 		db:     db,
-		logger: logger.NewFromZerolog(zeroLogger),
+		logger: logger.Get(),
 	}
 }
 
 // Create cria uma nova sessão
 func (r *SessionRepository) Create(ctx context.Context, sess *session.Session) error {
-	query := `
-		INSERT INTO zapcore_sessions (id, name, status, jid, qr_code, proxy_url, webhook, is_active, last_seen, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`
-
-	metadataJSON, err := json.Marshal(sess.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
+	// Garantir que timestamps estão definidos
+	if sess.CreatedAt.IsZero() {
+		sess.CreatedAt = time.Now()
+	}
+	if sess.UpdatedAt.IsZero() {
+		sess.UpdatedAt = time.Now()
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
-		sess.ID,
-		sess.Name,
-		sess.Status,
-		sess.JID,
-		sess.QRCode,
-		sess.ProxyURL,
-		sess.Webhook,
-		sess.IsActive,
-		sess.LastSeen,
-		metadataJSON,
-		sess.CreatedAt,
-		sess.UpdatedAt,
-	)
+	_, err := r.db.NewInsert().
+		Model(sess).
+		Exec(ctx)
 
 	if err != nil {
 		return fmt.Errorf("erro ao criar sessão: %w", err)
@@ -73,90 +50,154 @@ func (r *SessionRepository) Create(ctx context.Context, sess *session.Session) e
 
 // GetByID busca uma sessão pelo ID
 func (r *SessionRepository) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
-	query := `
-		SELECT id, name, status, jid, qr_code, proxy_url, webhook, is_active, last_seen, metadata, created_at, updated_at
-		FROM zapcore_sessions
-		WHERE id = $1
-	`
+	sess := new(session.Session)
+	err := r.db.NewSelect().
+		Model(sess).
+		Where(`"id" = ?`, id).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, id)
-	return r.scanSession(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, session.ErrSessionNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar sessão por ID: %w", err)
+	}
+
+	return sess, nil
 }
 
 // GetByName busca uma sessão pelo nome
 func (r *SessionRepository) GetByName(ctx context.Context, name string) (*session.Session, error) {
-	query := `
-		SELECT id, name, status, jid, qr_code, proxy_url, webhook, is_active, last_seen, metadata, created_at, updated_at
-		FROM zapcore_sessions
-		WHERE name = $1
-	`
+	sess := new(session.Session)
+	err := r.db.NewSelect().
+		Model(sess).
+		Where("? = ?", bun.Ident("name"), name).
+		Scan(ctx)
 
-	row := r.db.QueryRowContext(ctx, query, name)
-	return r.scanSession(row)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, session.ErrSessionNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar sessão por nome: %w", err)
+	}
+
+	return sess, nil
 }
 
-// List retorna todas as sessões com filtros opcionais
+// GetByJID busca uma sessão pelo JID
+func (r *SessionRepository) GetByJID(ctx context.Context, jid string) (*session.Session, error) {
+	sess := new(session.Session)
+	err := r.db.NewSelect().
+		Model(sess).
+		Where(`"jid" = ?`, jid).
+		Scan(ctx)
+
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, session.ErrSessionNotFound
+		}
+		return nil, fmt.Errorf("erro ao buscar sessão por JID: %w", err)
+	}
+
+	return sess, nil
+}
+
+// List lista todas as sessões com filtros
 func (r *SessionRepository) List(ctx context.Context, filters session.ListFilters) ([]*session.Session, error) {
-	query := "SELECT id, name, status, jid, qr_code, proxy_url, webhook, is_active, last_seen, metadata, created_at, updated_at FROM zapcore_sessions"
-	args := []any{}
-	conditions := []string{}
-	argIndex := 1
+	var sessions []*session.Session
+
+	query := r.db.NewSelect().Model(&sessions)
 
 	// Aplicar filtros
 	if filters.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
-		args = append(args, *filters.Status)
-		argIndex++
+		query = query.Where(`"status" = ?`, *filters.Status)
 	}
-
 	if filters.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIndex))
-		args = append(args, *filters.IsActive)
-		argIndex++
+		query = query.Where(`"isActive" = ?`, *filters.IsActive)
 	}
 
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	// Ordenação
-	orderBy := "created_at"
-	if filters.OrderBy != "" {
-		orderBy = filters.OrderBy
-	}
-
+	// Ordenação - usar switch para garantir case sensitivity correto
 	orderDir := "DESC"
 	if filters.OrderDir != "" {
 		orderDir = filters.OrderDir
 	}
 
-	query += fmt.Sprintf(" ORDER BY %s %s", orderBy, orderDir)
+	// Mapear orderBy para garantir case sensitivity correto
+	var orderColumn string
+	switch filters.OrderBy {
+	case "createdAt", "":
+		orderColumn = `"createdAt"`
+	case "updatedAt":
+		orderColumn = `"updatedAt"`
+	case "name":
+		orderColumn = `"name"`
+	case "status":
+		orderColumn = `"status"`
+	case "isActive":
+		orderColumn = `"isActive"`
+	default:
+		orderColumn = `"createdAt"` // fallback seguro
+	}
+
+	query = query.OrderExpr(orderColumn + " " + orderDir)
 
 	// Paginação
 	if filters.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT $%d", argIndex)
-		args = append(args, filters.Limit)
-		argIndex++
+		query = query.Limit(filters.Limit)
 	}
-
 	if filters.Offset > 0 {
-		query += fmt.Sprintf(" OFFSET $%d", argIndex)
-		args = append(args, filters.Offset)
+		query = query.Offset(filters.Offset)
 	}
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	err := query.Scan(ctx)
 	if err != nil {
+		r.logger.Error().Err(err).Msg("Erro ao listar sessões")
 		return nil, fmt.Errorf("erro ao listar sessões: %w", err)
 	}
-	defer rows.Close()
 
+	return sessions, nil
+}
+
+// ListLegacy lista todas as sessões com paginação (compatibilidade)
+func (r *SessionRepository) ListLegacy(ctx context.Context, limit, offset int) ([]*session.Session, error) {
+	filters := session.ListFilters{
+		Limit:  limit,
+		Offset: offset,
+	}
+	return r.List(ctx, filters)
+}
+
+// ListActive lista sessões ativas
+func (r *SessionRepository) ListActive(ctx context.Context) ([]*session.Session, error) {
 	var sessions []*session.Session
-	for rows.Next() {
-		sess, err := r.scanSessionFromRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, sess)
+
+	err := r.db.NewSelect().
+		Model(&sessions).
+		Where(`"isActive" = ?`, true).
+		OrderExpr(`"createdAt" DESC`).
+		Scan(ctx)
+
+	if err != nil {
+		r.logger.Error().Err(err).Msg("Erro ao listar sessões ativas")
+		return nil, fmt.Errorf("erro ao listar sessões ativas: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// ListByStatus lista sessões por status
+func (r *SessionRepository) ListByStatus(ctx context.Context, status session.WhatsAppSessionStatus) ([]*session.Session, error) {
+	var sessions []*session.Session
+
+	err := r.db.NewSelect().
+		Model(&sessions).
+		Where(`"status" = ?`, status).
+		OrderExpr(`"createdAt" DESC`).
+		Scan(ctx)
+
+	if err != nil {
+		r.logger.Error().Err(err).Str("status", string(status)).Msg("Erro ao listar sessões por status")
+		return nil, fmt.Errorf("erro ao listar sessões por status: %w", err)
 	}
 
 	return sessions, nil
@@ -164,31 +205,12 @@ func (r *SessionRepository) List(ctx context.Context, filters session.ListFilter
 
 // Update atualiza uma sessão existente
 func (r *SessionRepository) Update(ctx context.Context, sess *session.Session) error {
-	query := `
-		UPDATE zapcore_sessions
-		SET name = $2, status = $3, jid = $4, qr_code = $5, proxy_url = $6,
-		    webhook = $7, is_active = $8, last_seen = $9, metadata = $10, updated_at = $11
-		WHERE id = $1
-	`
+	sess.UpdatedAt = time.Now()
 
-	metadataJSON, err := json.Marshal(sess.Metadata)
-	if err != nil {
-		return fmt.Errorf("erro ao serializar metadata: %w", err)
-	}
-
-	result, err := r.db.ExecContext(ctx, query,
-		sess.ID,
-		sess.Name,
-		sess.Status,
-		sess.JID,
-		sess.QRCode,
-		sess.ProxyURL,
-		sess.Webhook,
-		sess.IsActive,
-		sess.LastSeen,
-		metadataJSON,
-		time.Now(),
-	)
+	result, err := r.db.NewUpdate().
+		Model(sess).
+		Where("? = ?", bun.Ident("id"), sess.ID).
+		Exec(ctx)
 
 	if err != nil {
 		return fmt.Errorf("erro ao atualizar sessão: %w", err)
@@ -209,10 +231,13 @@ func (r *SessionRepository) Update(ctx context.Context, sess *session.Session) e
 
 // Delete remove uma sessão
 func (r *SessionRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := "DELETE FROM zapcore_sessions WHERE id = $1"
+	result, err := r.db.NewDelete().
+		Model((*session.Session)(nil)).
+		Where("? = ?", bun.Ident("id"), id).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
+		r.logger.Error().Err(err).Str("session_id", id.String()).Msg("Erro ao deletar sessão")
 		return fmt.Errorf("erro ao deletar sessão: %w", err)
 	}
 
@@ -229,28 +254,15 @@ func (r *SessionRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// GetActiveCount retorna o número de sessões ativas
-func (r *SessionRepository) GetActiveCount(ctx context.Context) (int, error) {
-	query := "SELECT COUNT(*) FROM sessions WHERE is_active = true"
-
-	var count int
-	err := r.db.QueryRowContext(ctx, query).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("erro ao contar sessões ativas: %w", err)
-	}
-
-	return count, nil
-}
-
 // UpdateStatus atualiza apenas o status de uma sessão
 func (r *SessionRepository) UpdateStatus(ctx context.Context, sessionID uuid.UUID, status session.WhatsAppSessionStatus) error {
-	query := `
-		UPDATE zapcore_sessions
-		SET status = $2, updated_at = $3
-		WHERE id = $1
-	`
+	result, err := r.db.NewUpdate().
+		Model((*session.Session)(nil)).
+		Set(`"status" = ?`, status).
+		Set(`"updatedAt" = ?`, time.Now()).
+		Where(`"id" = ?`, sessionID).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, sessionID, status, time.Now())
 	if err != nil {
 		return fmt.Errorf("erro ao atualizar status da sessão: %w", err)
 	}
@@ -272,95 +284,15 @@ func (r *SessionRepository) UpdateStatus(ctx context.Context, sessionID uuid.UUI
 	return nil
 }
 
-// UpdateLastSeen atualiza o último acesso de uma sessão
-func (r *SessionRepository) UpdateLastSeen(ctx context.Context, id uuid.UUID) error {
-	query := "UPDATE zapcore_sessions SET last_seen = $2, updated_at = $3 WHERE id = $1"
-
-	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, id, now, now)
-	if err != nil {
-		return fmt.Errorf("erro ao atualizar last_seen da sessão: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return session.ErrSessionNotFound
-	}
-
-	return nil
-}
-
-// GetConnectedSessions retorna todas as sessões conectadas para reconexão
-func (r *SessionRepository) GetConnectedSessions(ctx context.Context) ([]*session.Session, error) {
-	query := `
-		SELECT id, name, status, jid, qr_code, proxy_url, webhook, is_active, last_seen, metadata, created_at, updated_at
-		FROM sessions
-		WHERE status = 'connected' AND is_active = true
-	`
-
-	rows, err := r.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("erro ao buscar sessões conectadas: %w", err)
-	}
-	defer rows.Close()
-
-	var sessions []*session.Session
-	for rows.Next() {
-		sess, err := r.scanSessionFromRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, sess)
-	}
-
-	return sessions, nil
-}
-
-// GetActiveSessions retorna todas as sessões ativas com JID para reconexão
-func (r *SessionRepository) GetActiveSessions(ctx context.Context) ([]*SessionData, error) {
-	query := `
-		SELECT id, name, jid
-		FROM zapcore_sessions
-		WHERE is_active = true AND jid IS NOT NULL AND jid != ''
-		ORDER BY created_at ASC
-	`
-
-	rows, err := r.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("erro ao buscar sessões ativas: %w", err)
-	}
-	defer rows.Close()
-
-	var sessions []*SessionData
-	for rows.Next() {
-		var sess SessionData
-		err := rows.Scan(&sess.ID, &sess.Name, &sess.JID)
-		if err != nil {
-			return nil, fmt.Errorf("erro ao escanear sessão ativa: %w", err)
-		}
-		sessions = append(sessions, &sess)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("erro ao iterar sessões ativas: %w", err)
-	}
-
-	return sessions, nil
-}
-
-// UpdateJID atualiza o JID de uma sessão após pareamento bem-sucedido
+// UpdateJID atualiza o JID de uma sessão
 func (r *SessionRepository) UpdateJID(ctx context.Context, sessionID uuid.UUID, jid string) error {
-	query := `
-		UPDATE zapcore_sessions
-		SET jid = $2, updated_at = $3
-		WHERE id = $1
-	`
+	result, err := r.db.NewUpdate().
+		Model((*session.Session)(nil)).
+		Set(`"jid" = ?`, jid).
+		Set(`"updatedAt" = ?`, time.Now()).
+		Where(`"id" = ?`, sessionID).
+		Exec(ctx)
 
-	result, err := r.db.ExecContext(ctx, query, sessionID, jid, time.Now())
 	if err != nil {
 		return fmt.Errorf("erro ao atualizar JID da sessão: %w", err)
 	}
@@ -382,71 +314,74 @@ func (r *SessionRepository) UpdateJID(ctx context.Context, sessionID uuid.UUID, 
 	return nil
 }
 
-// scanSession converte uma linha do banco em uma sessão
-func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) {
-	var sess session.Session
-	var metadataJSON []byte
-
-	err := row.Scan(
-		&sess.ID,
-		&sess.Name,
-		&sess.Status,
-		&sess.JID,
-		&sess.QRCode,
-		&sess.ProxyURL,
-		&sess.Webhook,
-		&sess.IsActive,
-		&sess.LastSeen,
-		&metadataJSON,
-		&sess.CreatedAt,
-		&sess.UpdatedAt,
-	)
+// UpdateLastSeen atualiza o último acesso de uma sessão
+func (r *SessionRepository) UpdateLastSeen(ctx context.Context, sessionID uuid.UUID) error {
+	now := time.Now()
+	result, err := r.db.NewUpdate().
+		Model((*session.Session)(nil)).
+		Set("? = ?", bun.Ident("lastSeen"), now).
+		Set("? = ?", bun.Ident("updatedAt"), now).
+		Where("? = ?", bun.Ident("id"), sessionID).
+		Exec(ctx)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, session.ErrSessionNotFound
-		}
-		return nil, fmt.Errorf("erro ao escanear sessão: %w", err)
+		return fmt.Errorf("erro ao atualizar último acesso da sessão: %w", err)
 	}
 
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &sess.Metadata); err != nil {
-			return nil, fmt.Errorf("erro ao deserializar metadata: %w", err)
-		}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar linhas afetadas: %w", err)
 	}
 
-	return &sess, nil
+	if rowsAffected == 0 {
+		return session.ErrSessionNotFound
+	}
+
+	return nil
 }
 
-// scanSessionFromRows converte uma linha de rows em uma sessão
-func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Session, error) {
-	var sess session.Session
-	var metadataJSON []byte
-
-	err := rows.Scan(
-		&sess.ID,
-		&sess.Name,
-		&sess.Status,
-		&sess.JID,
-		&sess.QRCode,
-		&sess.ProxyURL,
-		&sess.Webhook,
-		&sess.IsActive,
-		&sess.LastSeen,
-		&metadataJSON,
-		&sess.CreatedAt,
-		&sess.UpdatedAt,
-	)
+// Count conta o total de sessões
+func (r *SessionRepository) Count(ctx context.Context) (int64, error) {
+	count, err := r.db.NewSelect().
+		Model((*session.Session)(nil)).
+		Count(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("erro ao escanear sessão: %w", err)
+		return 0, fmt.Errorf("erro ao contar sessões: %w", err)
 	}
 
-	if len(metadataJSON) > 0 {
-		if err := json.Unmarshal(metadataJSON, &sess.Metadata); err != nil {
-			return nil, fmt.Errorf("erro ao deserializar metadata: %w", err)
-		}
+	return int64(count), nil
+}
+
+// GetActiveCount retorna o número de sessões ativas
+func (r *SessionRepository) GetActiveCount(ctx context.Context) (int, error) {
+	count, err := r.db.NewSelect().
+		Model((*session.Session)(nil)).
+		Where("? = ?", bun.Ident("isActive"), true).
+		Count(ctx)
+
+	if err != nil {
+		return 0, fmt.Errorf("erro ao contar sessões ativas: %w", err)
 	}
 
-	return &sess, nil
+	return count, nil
+}
+
+// ExistsByName verifica se uma sessão existe pelo nome
+func (r *SessionRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	exists, err := r.db.NewSelect().
+		Model((*session.Session)(nil)).
+		Where("? = ?", bun.Ident("name"), name).
+		Exists(ctx)
+
+	if err != nil {
+		return false, fmt.Errorf("erro ao verificar existência da sessão: %w", err)
+	}
+
+	return exists, nil
+}
+
+// GetActiveSessions retorna todas as sessões ativas (compatibilidade com WhatsApp client)
+func (r *SessionRepository) GetActiveSessions(ctx context.Context) ([]*session.Session, error) {
+	return r.ListActive(ctx)
 }
